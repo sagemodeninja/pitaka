@@ -8,7 +8,7 @@ use gpui::{
 
 use crate::{
     components::{ButtonElement, button, column, row},
-    core::Transaction,
+    core::{Collection, Transaction, write_transaction},
 };
 
 struct Pitaka {
@@ -76,15 +76,23 @@ impl Render for Pitaka {
             )
             .child(
                 row()
+                    .gap_1()
                     .child(
                         button("Test write...")
                             .id("test-write")
                             .on_click(|_, _, _| {
-                                let trans = Transaction {
-                                    description: String::from("Hello World"),
+                                let mut trans = Collection::<Transaction>::new(0);
+
+                                trans.add(Transaction {
+                                    description: String::from("Transaction #1"),
                                     amount_centavos: 100_54,
-                                };
-                                let result = core::write_transaction(0, trans);
+                                });
+                                trans.add(Transaction {
+                                    description: String::from("Transaction #1"),
+                                    amount_centavos: -694_32,
+                                });
+
+                                let result = write_transaction(&mut trans);
                                 match result {
                                     Ok(()) => println!("Successful write!"),
                                     Err(err) => println!("Something went wrong: {err}."),
