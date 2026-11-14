@@ -26,12 +26,6 @@ fn r_padded_str(file: &mut File) -> io::Result<String> {
     }
 }
 
-pub trait FileHandle: Sized {
-    fn len(&self) -> u32;
-    fn write(&mut self, file: &mut File) -> io::Result<()>;
-    fn read(offset: u64, file: &mut File) -> io::Result<Self>;
-}
-
 pub struct Transaction {
     pub description: String,
     pub amount_centavos: i64,
@@ -53,9 +47,15 @@ pub struct Collection<T: FileHandle> {
     pub o_last_record: u64,
 }
 
+pub trait FileHandle: Sized {
+    fn len(&self) -> u32;
+    fn write(&mut self, file: &mut File) -> io::Result<()>;
+    fn read(file: &mut File) -> io::Result<Self>;
+}
+
 impl FileHandle for Transaction {
     fn len(&self) -> u32 {
-        8 + self.description.len() as u32
+        16 + self.description.len() as u32
     }
 
     fn write(&mut self, file: &mut File) -> io::Result<()> {
@@ -63,9 +63,7 @@ impl FileHandle for Transaction {
         file.write_all(&self.amount_centavos.to_le_bytes())
     }
 
-    fn read(offset: u64, file: &mut File) -> io::Result<Self> {
-        file.seek(SeekFrom::Start(offset))?;
-
+    fn read(file: &mut File) -> io::Result<Self> {
         let description = r_padded_str(file)?;
 
         let mut amount_buf = [0u8; 8];
@@ -101,8 +99,22 @@ impl<T: FileHandle> FileHandle for Record<T> {
         self.item.write(file)
     }
 
-    fn read(offset: u64, file: &mut File) -> io::Result<Self> {
-        todo!()
+    fn read(file: &mut File) -> io::Result<Self> {
+        let mut buf = [0u8; 8];
+        file.read_exact(&mut buf)?;
+        let o_prev = u64::from_le_bytes(buf);
+
+        let mut buf = [0u8; 8];
+        file.read_exact(&mut buf)?;
+        let o_next = u64::from_le_bytes(buf);
+
+        let item = T::read(file)?;
+
+        Ok(Record {
+            o_prev,
+            o_next,
+            item,
+        })
     }
 }
 
@@ -124,6 +136,24 @@ impl<T: FileHandle> Collection<T> {
         self.for_append.push(record);
         self.len += 1;
     }
+
+    pub fn get_all(&mut self) -> io::Result<Vec<T>> {
+        let mut records: Vec<T> = vec![];
+        let mut file = File::open("test.ptk")?;
+
+        let mut cursor = self.o_first_record;
+        for _ in 0..self.len {
+            println!("Cursor: {cursor}");
+            file.seek(SeekFrom::Start(cursor))?;
+
+            let record = Record::<T>::read(&mut file)?;
+            records.push(record.item);
+
+            cursor = record.o_next;
+        }
+
+        Ok(records)
+    }
 }
 
 impl<T: FileHandle> FileHandle for Collection<T> {
@@ -133,30 +163,38 @@ impl<T: FileHandle> FileHandle for Collection<T> {
 
     fn write(&mut self, file: &mut File) -> io::Result<()> {
         // Right records...
-        let mut records = self.for_append.iter_mut().peekable();
+        if self.for_append.len() > 0 {
+            let mut records = self.for_append.iter_mut().peekable();
 
-        let mut o_prev = self.o_last_record;
-        let mut o_next = file.stream_position()?;
+            let mut o_prev = self.o_last_record;
+            let pos = if o_prev == 0 { self.position + 20 } else { 0 };
 
-        // if let Some(record) = &self.last_record {
-        //     o_next += record.len() as u64;
-        // }
+            let mut o_next = pos;
+            file.seek(SeekFrom::Start(o_next))?;
 
-        while let Some(record) = &mut records.next() {
-            record.o_prev = o_prev;
-
-            match records.peek() {
-                Some(next) => {
-                    o_prev = o_next;
-                    o_next += next.len() as u64;
-                    record.o_next = o_next;
-                }
-                None => {
-                    self.o_last_record = o_next;
-                }
+            if o_prev == 0 {
+                self.o_first_record = o_next;
             }
+            // if let Some(record) = &self.last_record {
+            //     o_next += record.len() as u64;
+            // }
 
-            record.write(file)?;
+            while let Some(record) = &mut records.next() {
+                record.o_prev = o_prev;
+
+                match records.peek() {
+                    Some(next) => {
+                        o_prev = o_next;
+                        o_next += next.len() as u64;
+                        record.o_next = o_next;
+                    }
+                    None => {
+                        self.o_last_record = o_next;
+                    }
+                }
+
+                record.write(file)?;
+            }
         }
 
         // Update/write collection header...
@@ -168,21 +206,30 @@ impl<T: FileHandle> FileHandle for Collection<T> {
         Ok(())
     }
 
-    fn read(offset: u64, file: &mut File) -> io::Result<Self> {
-        todo!()
-        // file.seek(SeekFrom::Start(offset))?;
+    fn read(file: &mut File) -> io::Result<Self> {
+        let position = file.stream_position()?;
 
-        // let description = r_padded_str(file)?;
+        let mut buf = [0u8; 4];
+        file.read_exact(&mut buf)?;
+        let len = u32::from_le_bytes(buf);
 
-        // let mut amount_buf = [0u8; 8];
-        // file.read_exact(&mut amount_buf)?;
+        let mut buf = [0u8; 8];
+        file.read_exact(&mut buf)?;
+        let o_first_record = u64::from_le_bytes(buf);
 
-        // let amount_centavos = i64::from_le_bytes(amount_buf);
+        let mut buf = [0u8; 8];
+        file.read_exact(&mut buf)?;
+        let o_last_record = u64::from_le_bytes(buf);
 
-        // Ok(Transaction {
-        //     description,
-        //     amount_centavos,
-        // })
+        Ok(Collection {
+            len,
+            for_append: Vec::new(),
+            last_record: None,
+
+            position,
+            o_first_record,
+            o_last_record,
+        })
     }
 }
 
@@ -192,7 +239,7 @@ pub fn write_transaction(trans: &mut Collection<Transaction>) -> io::Result<()> 
     Ok(())
 }
 
-pub fn read_transaction(offset: u64) -> io::Result<Transaction> {
+pub fn read_transaction(offset: u64) -> io::Result<Collection<Transaction>> {
     let mut file = File::open("test.ptk")?;
-    Transaction::read(offset, &mut file)
+    Collection::<Transaction>::read(&mut file)
 }

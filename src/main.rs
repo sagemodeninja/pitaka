@@ -3,7 +3,7 @@ mod core;
 
 use gpui::{
     App, AppContext, Application, Context, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, WindowOptions, rgb,
+    StatefulInteractiveElement, Styled, Window, WindowOptions, div, rgb,
 };
 
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
 
 struct Pitaka {
     transaction_count: i32,
-    transaction: Option<Transaction>,
+    transactions: Option<Collection<Transaction>>,
 }
 
 fn format_centavos(amount: &i64) -> String {
@@ -88,7 +88,7 @@ impl Render for Pitaka {
                                     amount_centavos: 100_54,
                                 });
                                 trans.add(Transaction {
-                                    description: String::from("Transaction #1"),
+                                    description: String::from("Transaction #2"),
                                     amount_centavos: -694_32,
                                 });
 
@@ -106,7 +106,7 @@ impl Render for Pitaka {
                                 let result = core::read_transaction(0);
                                 match result {
                                     Ok(trans) => {
-                                        this.transaction = Some(trans);
+                                        this.transactions = Some(trans);
                                         cx.notify();
                                     }
                                     Err(err) => println!("Something went wrong: {err}."),
@@ -114,7 +114,20 @@ impl Render for Pitaka {
                             })),
                     ),
             )
-            .child(debug_trans(&self.transaction))
+            .child(match &mut self.transactions {
+                Some(trans) => match trans.get_all() {
+                    Ok(records) => column()
+                        .child(row().gap_1().child("Description").child("Amount"))
+                        .children(records.iter().map(|trans| {
+                            row()
+                                .gap_1()
+                                .child(trans.description.clone())
+                                .child(format_centavos(&trans.amount_centavos))
+                        })),
+                    Err(err) => div().child(format!("Something went wrong: {err}")),
+                },
+                None => div().child("Please red a file first..."),
+            })
     }
 }
 
@@ -123,7 +136,7 @@ fn main() {
         cx.open_window(WindowOptions::default(), |_, cx| {
             cx.new(|_| Pitaka {
                 transaction_count: 0,
-                transaction: None,
+                transactions: None,
             })
         })
         .unwrap();
