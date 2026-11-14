@@ -1,4 +1,3 @@
-pub mod dir;
 pub mod file;
 pub mod settings;
 
@@ -27,8 +26,8 @@ impl PitakaCore {
     }
 
     pub fn new_file(&mut self, path: PathBuf) -> Result<()> {
-        let mut file = PitakaFile::new();
-        file.save(&path)?;
+        let mut file = PitakaFile::new(&path);
+        file.save()?;
 
         self.active_file = Some(file);
         self.settings.recent_files.push(path.clone());
@@ -44,7 +43,16 @@ impl PitakaCore {
         self.active_file = Some(file);
         self.settings.recent_files.push(path.clone());
         self.settings.last_opened_file = Some(path);
+        self.settings.update()?;
 
         Ok(())
+    }
+
+    pub fn save_file(&mut self) -> Result<()> {
+        if let Some(file) = &mut self.active_file {
+            file.save()
+        } else {
+            Ok(())
+        }
     }
 }

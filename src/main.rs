@@ -1,5 +1,6 @@
 mod components;
 mod core;
+mod utils;
 
 use gpui::{
     App, AppContext, Application, Context, Entity, InteractiveElement, IntoElement, ParentElement,
@@ -7,10 +8,12 @@ use gpui::{
 };
 
 use crate::core::PitakaCore;
-use crate::core::dir::documents_dir;
+use crate::utils::dir::documents_dir;
+use crate::utils::menu::{NewFile, OpenFile};
 use crate::{
     components::{ButtonElement, button, column, row},
     core::file::collection::{Collection, Transaction},
+    utils::menu::{PitakaMenuUtils, Quit},
 };
 
 struct Pitaka {
@@ -88,83 +91,6 @@ impl Render for Pitaka {
                                 //     Err(err) => println!("Something went wrong: {err}."),
                                 // }
                             }),
-                    )
-                    .child(button("Open File...").id("new-file").on_click(_cx.listener(
-                        |this, _, _, cx| {
-                            let selection = cx.prompt_for_paths(gpui::PathPromptOptions {
-                                files: true,
-                                directories: false,
-                                multiple: false,
-                                prompt: Some("Open Pitaka project".into()),
-                            });
-
-                            let core = this.core.clone();
-                            cx.spawn(async move |_this, cx| {
-                                match selection.await {
-                                    Ok(Ok(Some(paths))) => {
-                                        if let Some(path) = paths.into_iter().next() {
-                                            let result = core.update(cx, |core, cx| {
-                                                core.open_file(path);
-                                                cx.notify();
-                                            });
-
-                                            if let Err(error) = result {
-                                                eprintln!("Could not update core: {error}");
-                                            }
-                                        }
-                                    }
-                                    Ok(Ok(None)) => {} // Cancelled.
-                                    Ok(Err(error)) => eprintln!("Dialog failed: {error}"),
-                                    Err(error) => eprintln!("Response channel closed: {error}"),
-                                }
-                            })
-                            .detach();
-                        },
-                    )))
-                    .child(button("New File...").id("new-file").on_click(_cx.listener(
-                        |this, _, _, cx| {
-                            if let Some(init_dir) = documents_dir() {
-                                let selection = cx.prompt_for_new_path(
-                                    &init_dir, // &Path
-                                    Some("Untitled.ptk"),
-                                );
-
-                                let core = this.core.clone();
-                                cx.spawn(async move |_this, cx| {
-                                    match selection.await {
-                                        Ok(Ok(Some(path))) => {
-                                            let result = core.update(cx, |core, cx| {
-                                                core.new_file(path);
-                                                cx.notify();
-                                            });
-
-                                            if let Err(error) = result {
-                                                eprintln!("Could not update core: {error}");
-                                            }
-                                        }
-                                        Ok(Ok(None)) => {} // Cancelled
-                                        Ok(Err(error)) => eprintln!("Dialog failed: {error}"),
-                                        Err(error) => eprintln!("Response channel closed: {error}"),
-                                    }
-                                })
-                                .detach();
-                            }
-                            // this.core.new_file(cx);
-                        },
-                    )))
-                    .child(
-                        button("Test read...")
-                            .id("test-read")
-                            .on_click(_cx.listener(|this, _, _, cx| {
-                                // let result = core::read_transaction();
-                                // match result {
-                                //     Ok(trans) => {
-                                //         this.transactions = Some(trans);
-                                //         cx.notify();
-                                //     }
-                                //     Err(err) => println!("Something went wrong: {err}."),
-                                // }
-                            })),
                     ),
             )
             .child(match &self.core.read(_cx).active_file {
@@ -187,6 +113,9 @@ impl Render for Pitaka {
 fn main() {
     Application::new().run(|cx: &mut App| {
         let core = cx.new(|_| PitakaCore::init().unwrap());
+
+        cx.activate(true);
+        cx.add_menus(&core);
 
         cx.open_window(WindowOptions::default(), |_, cx| {
             cx.new(|_| Pitaka { core: core })
