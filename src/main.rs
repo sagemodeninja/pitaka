@@ -2,18 +2,19 @@ mod components;
 mod core;
 
 use gpui::{
-    App, AppContext, Application, Context, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, WindowOptions, div, rgb,
+    App, AppContext, Application, Context, Entity, InteractiveElement, IntoElement, ParentElement,
+    Render, StatefulInteractiveElement, Styled, Window, WindowOptions, div, rgb,
 };
 
+use crate::core::PitakaCore;
+use crate::core::dir::documents_dir;
 use crate::{
     components::{ButtonElement, button, column, row},
-    core::{Collection, Transaction, write_transaction},
+    core::file::collection::{Collection, Transaction},
 };
 
 struct Pitaka {
-    transaction_count: i32,
-    transactions: Option<Collection<Transaction>>,
+    core: Entity<PitakaCore>,
 }
 
 fn format_centavos(amount: &i64) -> String {
@@ -26,17 +27,6 @@ fn format_centavos(amount: &i64) -> String {
     format!("{sign}₱{pesos}.{centavos:02}")
 }
 
-fn debug_trans(trans: &Option<Transaction>) -> String {
-    match trans {
-        Some(trans) => format!(
-            "Description: {}, Amount: {}",
-            trans.description,
-            format_centavos(&trans.amount_centavos)
-        ),
-        _ => String::from("Please read file..."),
-    }
-}
-
 impl Render for Pitaka {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         column()
@@ -44,36 +34,36 @@ impl Render for Pitaka {
             .bg(rgb(0xffffff))
             .gap_1()
             .p_4()
-            .child(format!("Transactions: {}", self.transaction_count))
-            .child(
-                row()
-                    .gap_1()
-                    .child(
-                        button("-1")
-                            .id("remove-transaction")
-                            .bg(rgb(0x0071E3))
-                            .text_color(rgb(0xffffff))
-                            .on_click(_cx.listener(|this, _event, _window, cx| {
-                                this.transaction_count -= 1;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        button("0")
-                            .id("reset-transaction")
-                            .hover_bg(rgb(0x00ff00))
-                            .on_click(_cx.listener(|this, _event, _window, cx| {
-                                this.transaction_count = 0;
-                                cx.notify();
-                            })),
-                    )
-                    .child(button("+1").id("add-transaction").on_click(_cx.listener(
-                        |this, _event, _window, cx| {
-                            this.transaction_count += 1;
-                            cx.notify();
-                        },
-                    ))),
-            )
+            // .child(format!("Transactions: {}", self.transaction_count))
+            // .child(
+            //     row()
+            //         .gap_1()
+            //         .child(
+            //             button("-1")
+            //                 .id("remove-transaction")
+            //                 .bg(rgb(0x0071E3))
+            //                 .text_color(rgb(0xffffff))
+            //                 .on_click(_cx.listener(|this, _event, _window, cx| {
+            //                     this.transaction_count -= 1;
+            //                     cx.notify();
+            //                 })),
+            //         )
+            //         .child(
+            //             button("0")
+            //                 .id("reset-transaction")
+            //                 .hover_bg(rgb(0x00ff00))
+            //                 .on_click(_cx.listener(|this, _event, _window, cx| {
+            //                     this.transaction_count = 0;
+            //                     cx.notify();
+            //                 })),
+            //         )
+            //         .child(button("+1").id("add-transaction").on_click(_cx.listener(
+            //             |this, _event, _window, cx| {
+            //                 this.transaction_count += 1;
+            //                 cx.notify();
+            //             },
+            //         ))),
+            // )
             .child(
                 row()
                     .gap_1()
@@ -81,41 +71,104 @@ impl Render for Pitaka {
                         button("Test write...")
                             .id("test-write")
                             .on_click(|_, _, _| {
-                                let mut trans = Collection::<Transaction>::new(0);
+                                // let mut trans = Collection::<Transaction>::new(0);
 
-                                trans.add(Transaction {
-                                    description: String::from("Transaction #1"),
-                                    amount_centavos: 100_54,
-                                });
-                                trans.add(Transaction {
-                                    description: String::from("Transaction #2"),
-                                    amount_centavos: -694_32,
-                                });
+                                // trans.add(Transaction {
+                                //     description: String::from("Transaction #1"),
+                                //     amount_centavos: 100_54,
+                                // });
+                                // trans.add(Transaction {
+                                //     description: String::from("Transaction #2"),
+                                //     amount_centavos: -694_32,
+                                // });
 
-                                let result = write_transaction(&mut trans);
-                                match result {
-                                    Ok(()) => println!("Successful write!"),
-                                    Err(err) => println!("Something went wrong: {err}."),
-                                }
+                                // let result = write_transaction(&mut trans);
+                                // match result {
+                                //     Ok(()) => println!("Successful write!"),
+                                //     Err(err) => println!("Something went wrong: {err}."),
+                                // }
                             }),
                     )
+                    .child(button("Open File...").id("new-file").on_click(_cx.listener(
+                        |this, _, _, cx| {
+                            let selection = cx.prompt_for_paths(gpui::PathPromptOptions {
+                                files: true,
+                                directories: false,
+                                multiple: false,
+                                prompt: Some("Open Pitaka project".into()),
+                            });
+
+                            let core = this.core.clone();
+                            cx.spawn(async move |_this, cx| {
+                                match selection.await {
+                                    Ok(Ok(Some(paths))) => {
+                                        if let Some(path) = paths.into_iter().next() {
+                                            let result = core.update(cx, |core, cx| {
+                                                core.open_file(path);
+                                                cx.notify();
+                                            });
+
+                                            if let Err(error) = result {
+                                                eprintln!("Could not update core: {error}");
+                                            }
+                                        }
+                                    }
+                                    Ok(Ok(None)) => {} // Cancelled.
+                                    Ok(Err(error)) => eprintln!("Dialog failed: {error}"),
+                                    Err(error) => eprintln!("Response channel closed: {error}"),
+                                }
+                            })
+                            .detach();
+                        },
+                    )))
+                    .child(button("New File...").id("new-file").on_click(_cx.listener(
+                        |this, _, _, cx| {
+                            if let Some(init_dir) = documents_dir() {
+                                let selection = cx.prompt_for_new_path(
+                                    &init_dir, // &Path
+                                    Some("Untitled.ptk"),
+                                );
+
+                                let core = this.core.clone();
+                                cx.spawn(async move |_this, cx| {
+                                    match selection.await {
+                                        Ok(Ok(Some(path))) => {
+                                            let result = core.update(cx, |core, cx| {
+                                                core.new_file(path);
+                                                cx.notify();
+                                            });
+
+                                            if let Err(error) = result {
+                                                eprintln!("Could not update core: {error}");
+                                            }
+                                        }
+                                        Ok(Ok(None)) => {} // Cancelled
+                                        Ok(Err(error)) => eprintln!("Dialog failed: {error}"),
+                                        Err(error) => eprintln!("Response channel closed: {error}"),
+                                    }
+                                })
+                                .detach();
+                            }
+                            // this.core.new_file(cx);
+                        },
+                    )))
                     .child(
                         button("Test read...")
                             .id("test-read")
                             .on_click(_cx.listener(|this, _, _, cx| {
-                                let result = core::read_transaction(0);
-                                match result {
-                                    Ok(trans) => {
-                                        this.transactions = Some(trans);
-                                        cx.notify();
-                                    }
-                                    Err(err) => println!("Something went wrong: {err}."),
-                                }
+                                // let result = core::read_transaction();
+                                // match result {
+                                //     Ok(trans) => {
+                                //         this.transactions = Some(trans);
+                                //         cx.notify();
+                                //     }
+                                //     Err(err) => println!("Something went wrong: {err}."),
+                                // }
                             })),
                     ),
             )
-            .child(match &mut self.transactions {
-                Some(trans) => match trans.get_all() {
+            .child(match &self.core.read(_cx).active_file {
+                Some(file) => match file.transactions.get_all() {
                     Ok(records) => column()
                         .child(row().gap_1().child("Description").child("Amount"))
                         .children(records.iter().map(|trans| {
@@ -126,18 +179,17 @@ impl Render for Pitaka {
                         })),
                     Err(err) => div().child(format!("Something went wrong: {err}")),
                 },
-                None => div().child("Please red a file first..."),
+                None => div().child("Please create/open a file first..."),
             })
     }
 }
 
 fn main() {
     Application::new().run(|cx: &mut App| {
+        let core = cx.new(|_| PitakaCore::init().unwrap());
+
         cx.open_window(WindowOptions::default(), |_, cx| {
-            cx.new(|_| Pitaka {
-                transaction_count: 0,
-                transactions: None,
-            })
+            cx.new(|_| Pitaka { core: core })
         })
         .unwrap();
     });
