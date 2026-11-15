@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
+use std::io::{Result, Seek, SeekFrom, Write};
 
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
@@ -34,7 +34,6 @@ pub trait FileHandle: Sized {
         cursor: &mut u64,
     ) -> Result<()>;
     fn read(file: &mut File) -> Result<Self>;
-    fn read_self(&mut self, file: &mut File) -> Result<()>;
 }
 
 impl FileHandle for Transaction {
@@ -49,20 +48,12 @@ impl FileHandle for Transaction {
 
     fn read(file: &mut File) -> Result<Self> {
         let description = file.read_padded_str()?;
-
-        let mut amount_buf = [0u8; 8];
-        file.read_exact(&mut amount_buf)?;
-
-        let amount_centavos = i64::from_le_bytes(amount_buf);
+        let amount_centavos = file.read_le_i64()?;
 
         Ok(Transaction {
             description,
             amount_centavos,
         })
-    }
-
-    fn read_self(&mut self, _: &mut File) -> Result<()> {
-        todo!()
     }
 }
 
@@ -93,10 +84,7 @@ impl<T: FileHandle> FileHandle for Record<T> {
 
     fn read(file: &mut File) -> Result<Self> {
         let o_prev = file.read_le_u64()?;
-        let mut buf = [0u8; 8];
-        file.read_exact(&mut buf)?;
-        let o_next = u64::from_le_bytes(buf);
-
+        let o_next = file.read_le_u64()?;
         let item = T::read(file)?;
 
         Ok(Record {
@@ -104,10 +92,6 @@ impl<T: FileHandle> FileHandle for Record<T> {
             o_next,
             item,
         })
-    }
-
-    fn read_self(&mut self, _: &mut File) -> Result<()> {
-        todo!()
     }
 }
 
@@ -123,27 +107,38 @@ impl<T: FileHandle> Collection<T> {
         }
     }
 
+    pub fn index(&mut self, file: &mut File) -> Result<()> {
+        file.move_to(self.position)?;
+
+        self.count = file.read_le_u32()?;
+        self.o_first_record = file.read_le_u64()?;
+        self.o_last_record = file.read_le_u64()?;
+        // +12 reserved bytes.
+
+        Ok(())
+    }
+
     pub fn get_all(&self, file: &mut File) -> Result<Vec<T>>
     where
         T: Clone,
     {
-        let mut records: Vec<T> = vec![];
+        let mut items: Vec<T> = vec![];
 
         let mut cursor = self.o_first_record;
         for _ in 0..self.count {
-            file.seek(SeekFrom::Start(cursor))?;
+            file.move_to(cursor)?;
 
             let record = Record::<T>::read(file)?;
-            records.push(record.item);
+            items.push(record.item);
 
             cursor = record.o_next;
         }
 
         for trans in &self.for_append {
-            records.push(trans.item.clone());
+            items.push(trans.item.clone());
         }
 
-        Ok(records)
+        Ok(items)
     }
 
     pub fn add(&mut self, item: T) {
@@ -220,15 +215,5 @@ impl<T: FileHandle> FileHandle for Collection<T> {
 
     fn read(_: &mut File) -> Result<Self> {
         todo!()
-    }
-
-    fn read_self(&mut self, file: &mut File) -> Result<()> {
-        file.move_to(self.position)?;
-
-        self.count = file.read_le_u32()?;
-        self.o_first_record = file.read_le_u64()?;
-        self.o_last_record = file.read_le_u64()?;
-
-        Ok(())
     }
 }

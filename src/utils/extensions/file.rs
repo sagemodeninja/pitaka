@@ -7,11 +7,13 @@ pub trait FileCursorExtensions {
 }
 
 pub trait FileReadExtensions {
+    fn read_4_bytes(&mut self) -> Result<[u8; 4]>;
+    fn read_8_bytes(&mut self) -> Result<[u8; 8]>;
+
     fn read_le_u8(&mut self) -> Result<u8>;
     fn read_le_u16(&mut self) -> Result<u16>;
-    fn read_u32_bytes(&mut self) -> Result<[u8; 4]>;
     fn read_le_u32(&mut self) -> Result<u32>;
-    fn read_u64_bytes(&mut self) -> Result<[u8; 8]>;
+    fn read_le_i64(&mut self) -> Result<i64>;
     fn read_le_u64(&mut self) -> Result<u64>;
 
     fn read_padded_str(&mut self) -> Result<String>;
@@ -32,6 +34,19 @@ impl FileCursorExtensions for File {
 }
 
 impl FileReadExtensions for File {
+    // Bytes...
+    fn read_4_bytes(&mut self) -> Result<[u8; 4]> {
+        let mut buf = [0u8; 4];
+        self.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+
+    fn read_8_bytes(&mut self) -> Result<[u8; 8]> {
+        let mut buf = [0u8; 8];
+        self.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+
     // Integers...
     fn read_le_u8(&mut self) -> Result<u8> {
         let mut buf = [0u8; 1];
@@ -45,31 +60,24 @@ impl FileReadExtensions for File {
         Ok(u16::from_le_bytes(buf))
     }
 
-    fn read_u32_bytes(&mut self) -> Result<[u8; 4]> {
-        let mut buf = [0u8; 4];
-        self.read_exact(&mut buf)?;
-        Ok(buf)
-    }
-
     fn read_le_u32(&mut self) -> Result<u32> {
-        let buf = self.read_u32_bytes()?;
+        let buf = self.read_4_bytes()?;
         Ok(u32::from_le_bytes(buf))
     }
 
-    fn read_u64_bytes(&mut self) -> Result<[u8; 8]> {
-        let mut buf = [0u8; 8];
-        self.read_exact(&mut buf)?;
-        Ok(buf)
+    fn read_le_i64(&mut self) -> Result<i64> {
+        let buf = self.read_8_bytes()?;
+        Ok(i64::from_le_bytes(buf))
     }
 
     fn read_le_u64(&mut self) -> Result<u64> {
-        let buf = self.read_u64_bytes()?;
+        let buf = self.read_8_bytes()?;
         Ok(u64::from_le_bytes(buf))
     }
 
     // String...
     fn read_padded_str(&mut self) -> Result<String> {
-        let len_buf = self.read_u64_bytes()?;
+        let len_buf = self.read_8_bytes()?;
         let len = usize::from_le_bytes(len_buf);
 
         let mut str_buf = vec![0u8; len];
