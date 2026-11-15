@@ -1,7 +1,9 @@
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 
-use crate::core::document::PitakaDocument;
+use crate::utils::extensions::file::{
+    FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
+};
 
 #[derive(Clone)]
 pub struct Transaction {
@@ -26,8 +28,13 @@ pub struct Collection<T: FileHandle> {
 
 pub trait FileHandle: Sized {
     fn len(&self) -> u32;
-    fn write(&mut self, file: &mut File, cursor: &mut u64) -> Result<()>;
+    fn write(
+        &mut self,
+        file: &mut File,
+        cursor: &mut u64,
+    ) -> Result<()>;
     fn read(file: &mut File) -> Result<Self>;
+    fn read_self(&mut self, file: &mut File) -> Result<()>;
 }
 
 impl FileHandle for Transaction {
@@ -36,12 +43,12 @@ impl FileHandle for Transaction {
     }
 
     fn write(&mut self, file: &mut File, _: &mut u64) -> Result<()> {
-        w_padded_str(&self.description, file)?;
+        file.write_padded_str(&self.description)?;
         file.write_all(&self.amount_centavos.to_le_bytes())
     }
 
     fn read(file: &mut File) -> Result<Self> {
-        let description = r_padded_str(file)?;
+        let description = file.read_padded_str()?;
 
         let mut amount_buf = [0u8; 8];
         file.read_exact(&mut amount_buf)?;
@@ -52,6 +59,10 @@ impl FileHandle for Transaction {
             description,
             amount_centavos,
         })
+    }
+
+    fn read_self(&mut self, _: &mut File) -> Result<()> {
+        todo!()
     }
 }
 
@@ -70,17 +81,18 @@ impl<T: FileHandle> FileHandle for Record<T> {
         16 + self.item.len()
     }
 
-    fn write(&mut self, file: &mut File, _doc: &mut u64) -> Result<()> {
+    fn write(
+        &mut self,
+        file: &mut File,
+        _doc: &mut u64,
+    ) -> Result<()> {
         file.write_all(&self.o_prev.to_le_bytes())?;
         file.write_all(&self.o_next.to_le_bytes())?;
         self.item.write(file, _doc)
     }
 
     fn read(file: &mut File) -> Result<Self> {
-        let mut buf = [0u8; 8];
-        file.read_exact(&mut buf)?;
-        let o_prev = u64::from_le_bytes(buf);
-
+        let o_prev = file.read_le_u64()?;
         let mut buf = [0u8; 8];
         file.read_exact(&mut buf)?;
         let o_next = u64::from_le_bytes(buf);
@@ -92,6 +104,10 @@ impl<T: FileHandle> FileHandle for Record<T> {
             o_next,
             item,
         })
+    }
+
+    fn read_self(&mut self, _: &mut File) -> Result<()> {
+        todo!()
     }
 }
 
@@ -141,7 +157,11 @@ impl<T: FileHandle> FileHandle for Collection<T> {
         0
     }
 
-    fn write(&mut self, file: &mut File, cursor: &mut u64) -> Result<()> {
+    fn write(
+        &mut self,
+        file: &mut File,
+        cursor: &mut u64,
+    ) -> Result<()> {
         let append_len = self.for_append.len() as u32;
         let record_cnt = self.count + append_len;
 
@@ -150,14 +170,14 @@ impl<T: FileHandle> FileHandle for Collection<T> {
             let mut records = self.for_append.iter_mut().peekable();
 
             let mut o_prev = self.o_last_record;
-            let mut o_next = if o_prev == 0 {
+            let mut o_next = if self.o_last_record == 0 {
                 // TODO: Revisit because this might not be correct.
                 self.position + 20
             } else {
                 *cursor
             };
 
-            if o_prev == 0 {
+            if self.o_last_record == 0 {
                 self.o_first_record = o_next;
             } else {
                 let offset = self.o_last_record + 8;
@@ -169,14 +189,14 @@ impl<T: FileHandle> FileHandle for Collection<T> {
 
             while let Some(record) = &mut records.next() {
                 record.o_prev = o_prev;
-
+                o_prev = o_next;
                 match records.peek() {
-                    Some(next) => {
-                        o_prev = o_next;
-                        o_next += next.len() as u64;
+                    Some(_) => {
+                        o_next += record.len() as u64;
                         record.o_next = o_next;
                     }
                     None => {
+                        record.o_next = 0;
                         self.o_last_record = o_next;
                     }
                 }
@@ -198,53 +218,17 @@ impl<T: FileHandle> FileHandle for Collection<T> {
         Ok(())
     }
 
-    fn read(file: &mut File) -> Result<Self> {
-        let position = file.stream_position()?;
-
-        let mut buf = [0u8; 4];
-        file.read_exact(&mut buf)?;
-        let count = u32::from_le_bytes(buf);
-
-        let mut buf = [0u8; 8];
-        file.read_exact(&mut buf)?;
-        let o_first_record = u64::from_le_bytes(buf);
-
-        let mut buf = [0u8; 8];
-        file.read_exact(&mut buf)?;
-        let o_last_record = u64::from_le_bytes(buf);
-
-        Ok(Collection {
-            count,
-            for_append: Vec::new(),
-
-            position,
-            o_first_record,
-            o_last_record,
-        })
+    fn read(_: &mut File) -> Result<Self> {
+        todo!()
     }
-}
 
-fn w_padded_str(value: &String, file: &mut File) -> Result<()> {
-    let bytes: &[u8] = value.as_bytes();
+    fn read_self(&mut self, file: &mut File) -> Result<()> {
+        file.move_to(self.position)?;
 
-    file.write_all(&bytes.len().to_le_bytes())?;
-    file.write_all(&bytes)?;
+        self.count = file.read_le_u32()?;
+        self.o_first_record = file.read_le_u64()?;
+        self.o_last_record = file.read_le_u64()?;
 
-    Ok(())
-}
-
-fn r_padded_str(file: &mut File) -> Result<String> {
-    let mut len_buf = [0u8; 8];
-    file.read_exact(&mut len_buf)?;
-
-    let len = usize::from_le_bytes(len_buf);
-    let mut str_buf = vec![0u8; len];
-    file.read_exact(&mut str_buf)?;
-
-    let result = String::from_utf8(str_buf);
-
-    match result {
-        Ok(text) => Ok(text),
-        Err(err) => Err(Error::new(ErrorKind::InvalidData, err)),
+        Ok(())
     }
 }

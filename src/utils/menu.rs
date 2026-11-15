@@ -116,11 +116,16 @@ fn add_handlers(cx: &mut App, core: &Entity<PitakaCore>) {
 
     let action_core = core.clone();
     cx.on_action(move |_: &ClearRecents, cx: &mut App| {
-        action_core.update(cx, |core, cx| {
-            core.settings.clear_recents();
+        let result = action_core.update(cx, |core, cx| {
+            core.settings.clear_recents()?;
             cx.notify();
+            Ok::<(), std::io::Error>(())
         });
-        set_menus(cx, &action_core)
+
+        match result {
+            Ok(()) => set_menus(cx, &action_core),
+            Err(error) => eprintln!("Could not clear recents: {error}"),
+        }
     });
 
     let action_core = core.clone();
