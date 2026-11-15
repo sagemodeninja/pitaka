@@ -143,7 +143,7 @@ impl<T: FileHandle> FileHandle for Collection<T> {
 
     fn write(&mut self, file: &mut File, cursor: &mut u64) -> Result<()> {
         let append_len = self.for_append.len() as u32;
-        let record_cnt = self.len() + append_len;
+        let record_cnt = self.count + append_len;
 
         // Right records...
         if append_len > 0 {
@@ -157,11 +157,15 @@ impl<T: FileHandle> FileHandle for Collection<T> {
                 *cursor
             };
 
-            file.seek(SeekFrom::Start(o_next))?;
-
             if o_prev == 0 {
                 self.o_first_record = o_next;
+            } else {
+                let offset = self.o_last_record + 8;
+                file.seek(SeekFrom::Start(offset))?;
+                file.write_all(&o_next.to_le_bytes())?;
             }
+
+            file.seek(SeekFrom::Start(o_next))?;
 
             while let Some(record) = &mut records.next() {
                 record.o_prev = o_prev;
