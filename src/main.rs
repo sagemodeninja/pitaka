@@ -2,22 +2,25 @@ mod components;
 mod core;
 mod utils;
 
-use gpui::{
-    App, AppContext, Application, Context, Entity, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Window, WindowOptions, div, rgb,
+use gpui_kit::base::input::MaskPattern;
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::{
+    App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window,
+    WindowOptions, assets, div,
 };
 
-use crate::core::PitakaCore;
-use crate::utils::dir::documents_dir;
-use crate::utils::menu::{NewFile, OpenFile};
+use crate::core::document::collection::Transaction;
 use crate::{
-    components::{ButtonElement, button, column, row},
-    core::file::collection::{Collection, Transaction},
-    utils::menu::{PitakaMenuUtils, Quit},
+    components::{column, row},
+    core::PitakaCore,
+    utils::menu::PitakaMenuUtils,
 };
 
 struct Pitaka {
     core: Entity<PitakaCore>,
+    trans_desc_ipt: Entity<InputState>,
+    trans_amnt_ipt: Entity<InputState>,
 }
 
 fn format_centavos(amount: &i64) -> String {
@@ -30,96 +33,105 @@ fn format_centavos(amount: &i64) -> String {
     format!("{sign}₱{pesos}.{centavos:02}")
 }
 
+fn amnt_str_to_centavos(amount: String) -> Option<i64> {
+    let amount = amount.trim().replace(',', "");
+
+    if !amount.is_empty() {
+        let parts: Vec<&str> = amount.split('.').collect();
+
+        if let Ok(whole) = parts[0].parse::<i64>() {
+            let centavos = if parts.len() > 1 {
+                format!("{:0<2}", parts[1]).parse::<i64>()
+            } else {
+                Ok(0)
+            };
+
+            if let Ok(centavos) = centavos {
+                return Some(whole * 100 + centavos);
+            }
+        }
+    }
+
+    None
+}
+
+fn render_trans(this: &Pitaka, cx: &mut App) -> Div {
+    this.core.update(cx, |core, _| match &mut core.document {
+        Some(doc) => match doc.get_all_trans() {
+            Ok(records) => column()
+                .child(row().gap_1().child("Description").child("Amount"))
+                .children(records.iter().map(|trans| {
+                    row()
+                        .gap_1()
+                        .child(trans.description.clone())
+                        .child(format_centavos(&trans.amount_centavos))
+                })),
+            Err(err) => div().child(format!("Something went wrong: {err}")),
+        },
+        None => div().child("Please create/open a file first..."),
+    })
+}
+
 impl Render for Pitaka {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         column()
             .size_full()
-            .bg(rgb(0xffffff))
-            .gap_1()
+            .gap_2()
             .p_4()
-            // .child(format!("Transactions: {}", self.transaction_count))
-            // .child(
-            //     row()
-            //         .gap_1()
-            //         .child(
-            //             button("-1")
-            //                 .id("remove-transaction")
-            //                 .bg(rgb(0x0071E3))
-            //                 .text_color(rgb(0xffffff))
-            //                 .on_click(_cx.listener(|this, _event, _window, cx| {
-            //                     this.transaction_count -= 1;
-            //                     cx.notify();
-            //                 })),
-            //         )
-            //         .child(
-            //             button("0")
-            //                 .id("reset-transaction")
-            //                 .hover_bg(rgb(0x00ff00))
-            //                 .on_click(_cx.listener(|this, _event, _window, cx| {
-            //                     this.transaction_count = 0;
-            //                     cx.notify();
-            //                 })),
-            //         )
-            //         .child(button("+1").id("add-transaction").on_click(_cx.listener(
-            //             |this, _event, _window, cx| {
-            //                 this.transaction_count += 1;
-            //                 cx.notify();
-            //             },
-            //         ))),
-            // )
+            .child(Input::new(&self.trans_desc_ipt).cleanable(true))
+            .child(Input::new(&self.trans_amnt_ipt))
             .child(
-                row()
-                    .gap_1()
-                    .child(
-                        button("Test write...")
-                            .id("test-write")
-                            .on_click(|_, _, _| {
-                                // let mut trans = Collection::<Transaction>::new(0);
+                Button::new("add-trans-btn")
+                    .primary()
+                    .label("Add Transaction")
+                    .on_click(_cx.listener(|this, _, _, cx| {
+                        this.core.update(cx, |core, cx| {
+                            if let Some(doc) = &mut core.document {
+                                let desc = this.trans_desc_ipt.read(cx).value();
+                                let amnt = this.trans_amnt_ipt.read(cx).value();
 
-                                // trans.add(Transaction {
-                                //     description: String::from("Transaction #1"),
-                                //     amount_centavos: 100_54,
-                                // });
-                                // trans.add(Transaction {
-                                //     description: String::from("Transaction #2"),
-                                //     amount_centavos: -694_32,
-                                // });
-
-                                // let result = write_transaction(&mut trans);
-                                // match result {
-                                //     Ok(()) => println!("Successful write!"),
-                                //     Err(err) => println!("Something went wrong: {err}."),
-                                // }
-                            }),
-                    ),
+                                if let Some(amnt) = amnt_str_to_centavos(amnt.into()) {
+                                    println!("Desc: {}, Amnt: {}", desc, amnt);
+                                    doc.transactions.add(Transaction {
+                                        description: desc.into(),
+                                        amount_centavos: amnt,
+                                    });
+                                    cx.notify();
+                                }
+                            }
+                        })
+                    })),
             )
-            .child(match &self.core.read(_cx).active_file {
-                Some(file) => match file.transactions.get_all() {
-                    Ok(records) => column()
-                        .child(row().gap_1().child("Description").child("Amount"))
-                        .children(records.iter().map(|trans| {
-                            row()
-                                .gap_1()
-                                .child(trans.description.clone())
-                                .child(format_centavos(&trans.amount_centavos))
-                        })),
-                    Err(err) => div().child(format!("Something went wrong: {err}")),
-                },
-                None => div().child("Please create/open a file first..."),
-            })
+            .child(render_trans(self, _cx))
     }
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        let core = cx.new(|_| PitakaCore::init().unwrap());
+    gpui_kit::application()
+        .with_assets(assets::Assets)
+        .run(|cx: &mut App| {
+            gpui_kit::init(cx);
 
-        cx.activate(true);
-        cx.add_menus(&core);
+            let core = cx.new(|_| PitakaCore::init().unwrap());
 
-        cx.open_window(WindowOptions::default(), |_, cx| {
-            cx.new(|_| Pitaka { core: core })
-        })
-        .unwrap();
-    });
+            cx.activate(true);
+            cx.add_menus(&core);
+
+            gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                cx.new(|cx| Pitaka {
+                    core: core,
+                    trans_desc_ipt: cx
+                        .new(|cx| InputState::new(window, cx).placeholder("Enter description")),
+                    trans_amnt_ipt: cx.new(|cx| {
+                        InputState::new(window, cx)
+                            .placeholder("Enter amount")
+                            .mask_pattern(MaskPattern::Number {
+                                separator: Some(','),
+                                fraction: Some(2),
+                            })
+                    }),
+                })
+            })
+            .unwrap();
+        });
 }

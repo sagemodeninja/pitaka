@@ -1,6 +1,9 @@
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 
+use crate::core::document::PitakaDocument;
+
+#[derive(Clone)]
 pub struct Transaction {
     pub description: String,
     pub amount_centavos: i64,
@@ -13,7 +16,7 @@ pub struct Record<T: FileHandle> {
 }
 
 pub struct Collection<T: FileHandle> {
-    len: u32,
+    count: u32,
     for_append: Vec<Record<T>>,
 
     pub position: u64,
@@ -23,7 +26,7 @@ pub struct Collection<T: FileHandle> {
 
 pub trait FileHandle: Sized {
     fn len(&self) -> u32;
-    fn write(&mut self, file: &mut File) -> Result<()>;
+    fn write(&mut self, file: &mut File, cursor: &mut u64) -> Result<()>;
     fn read(file: &mut File) -> Result<Self>;
 }
 
@@ -32,7 +35,7 @@ impl FileHandle for Transaction {
         16 + self.description.len() as u32
     }
 
-    fn write(&mut self, file: &mut File) -> Result<()> {
+    fn write(&mut self, file: &mut File, _: &mut u64) -> Result<()> {
         w_padded_str(&self.description, file)?;
         file.write_all(&self.amount_centavos.to_le_bytes())
     }
@@ -67,10 +70,10 @@ impl<T: FileHandle> FileHandle for Record<T> {
         16 + self.item.len()
     }
 
-    fn write(&mut self, file: &mut File) -> Result<()> {
+    fn write(&mut self, file: &mut File, _doc: &mut u64) -> Result<()> {
         file.write_all(&self.o_prev.to_le_bytes())?;
         file.write_all(&self.o_next.to_le_bytes())?;
-        self.item.write(file)
+        self.item.write(file, _doc)
     }
 
     fn read(file: &mut File) -> Result<Self> {
@@ -95,7 +98,7 @@ impl<T: FileHandle> FileHandle for Record<T> {
 impl<T: FileHandle> Collection<T> {
     pub fn new(pos: u64) -> Self {
         Self {
-            len: 0,
+            count: 0,
             for_append: Vec::new(),
 
             position: pos,
@@ -104,27 +107,32 @@ impl<T: FileHandle> Collection<T> {
         }
     }
 
-    pub fn add(&mut self, item: T) {
-        let record = Record::new(self.o_last_record, item);
-        self.for_append.push(record);
-        self.len += 1;
-    }
-
-    pub fn get_all(&self) -> Result<Vec<T>> {
+    pub fn get_all(&self, file: &mut File) -> Result<Vec<T>>
+    where
+        T: Clone,
+    {
         let mut records: Vec<T> = vec![];
-        let mut file = File::open("test.ptk")?;
 
         let mut cursor = self.o_first_record;
-        for _ in 0..self.len {
+        for _ in 0..self.count {
             file.seek(SeekFrom::Start(cursor))?;
 
-            let record = Record::<T>::read(&mut file)?;
+            let record = Record::<T>::read(file)?;
             records.push(record.item);
 
             cursor = record.o_next;
         }
 
+        for trans in &self.for_append {
+            records.push(trans.item.clone());
+        }
+
         Ok(records)
+    }
+
+    pub fn add(&mut self, item: T) {
+        let record = Record::new(self.o_last_record, item);
+        self.for_append.push(record);
     }
 }
 
@@ -133,23 +141,27 @@ impl<T: FileHandle> FileHandle for Collection<T> {
         0
     }
 
-    fn write(&mut self, file: &mut File) -> Result<()> {
+    fn write(&mut self, file: &mut File, cursor: &mut u64) -> Result<()> {
+        let append_len = self.for_append.len() as u32;
+        let record_cnt = self.len() + append_len;
+
         // Right records...
-        if self.for_append.len() > 0 {
+        if append_len > 0 {
             let mut records = self.for_append.iter_mut().peekable();
 
             let mut o_prev = self.o_last_record;
-            let pos = if o_prev == 0 { self.position + 20 } else { 0 };
+            let mut o_next = if o_prev == 0 {
+                // TODO: Revisit because this might not be correct.
+                self.position + 20
+            } else {
+                *cursor
+            };
 
-            let mut o_next = pos;
             file.seek(SeekFrom::Start(o_next))?;
 
             if o_prev == 0 {
                 self.o_first_record = o_next;
             }
-            // if let Some(record) = &self.last_record {
-            //     o_next += record.len() as u64;
-            // }
 
             while let Some(record) = &mut records.next() {
                 record.o_prev = o_prev;
@@ -165,13 +177,17 @@ impl<T: FileHandle> FileHandle for Collection<T> {
                     }
                 }
 
-                record.write(file)?;
+                record.write(file, cursor)?;
             }
         }
 
+        // Update cursor so next append knows
+        // where to start.
+        *cursor = file.stream_position()? + 1;
+
         // Update/write collection header...
         file.seek(SeekFrom::Start(self.position))?;
-        file.write_all(&self.len.to_le_bytes())?;
+        file.write_all(&record_cnt.to_le_bytes())?;
         file.write_all(&self.o_first_record.to_le_bytes())?;
         file.write_all(&self.o_last_record.to_le_bytes())?;
 
@@ -183,7 +199,7 @@ impl<T: FileHandle> FileHandle for Collection<T> {
 
         let mut buf = [0u8; 4];
         file.read_exact(&mut buf)?;
-        let len = u32::from_le_bytes(buf);
+        let count = u32::from_le_bytes(buf);
 
         let mut buf = [0u8; 8];
         file.read_exact(&mut buf)?;
@@ -194,7 +210,7 @@ impl<T: FileHandle> FileHandle for Collection<T> {
         let o_last_record = u64::from_le_bytes(buf);
 
         Ok(Collection {
-            len,
+            count,
             for_append: Vec::new(),
 
             position,

@@ -1,17 +1,17 @@
-use gpui::{Action, Entity};
-use gpui::{App, KeyBinding, Menu, MenuItem, actions};
+use gpui_kit::{Action, Entity};
+use gpui_kit::{App, KeyBinding, Menu, MenuItem, actions};
 use std::path::PathBuf;
 
 use crate::core::PitakaCore;
 use crate::utils::dir::documents_dir;
+
+actions!(pitaka, [Quit, NewFile, OpenFile, ClearRecents, SaveFile]);
 
 #[derive(Clone, PartialEq, Action)]
 #[action(namespace = pitaka, no_json)]
 struct OpenRecents {
     path: PathBuf,
 }
-
-actions!(pitaka, [Quit, NewFile, OpenFile, ClearRecents, SaveFile]);
 
 pub trait PitakaMenuUtils {
     fn add_menus(&mut self, core: &Entity<PitakaCore>);
@@ -49,7 +49,7 @@ fn add_handlers(cx: &mut App, core: &Entity<PitakaCore>) {
                 match selection.await {
                     Ok(Ok(Some(path))) => {
                         let result = core.update(cx, |core, cx| {
-                            core.new_file(path)?;
+                            core.new_doc(path)?;
                             cx.notify();
                             Ok::<(), std::io::Error>(())
                         });
@@ -69,7 +69,7 @@ fn add_handlers(cx: &mut App, core: &Entity<PitakaCore>) {
 
     let action_core = core.clone();
     cx.on_action(move |_: &OpenFile, cx: &mut App| {
-        let selection = cx.prompt_for_paths(gpui::PathPromptOptions {
+        let selection = cx.prompt_for_paths(gpui_kit::PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
@@ -82,8 +82,9 @@ fn add_handlers(cx: &mut App, core: &Entity<PitakaCore>) {
                 Ok(Ok(Some(paths))) => {
                     if let Some(path) = paths.into_iter().next() {
                         let result = core.update(cx, |core, cx| {
-                            core.open_file(path);
+                            core.open_doc(path)?;
                             cx.notify();
+                            Ok::<(), std::io::Error>(())
                         });
 
                         if let Err(error) = result {
@@ -102,7 +103,7 @@ fn add_handlers(cx: &mut App, core: &Entity<PitakaCore>) {
     let action_core = core.clone();
     cx.on_action(move |action: &OpenRecents, cx: &mut App| {
         let result = action_core.update(cx, |core, cx| {
-            core.open_file(action.path.clone())?;
+            core.open_doc(action.path.clone())?;
             cx.notify();
             Ok::<(), std::io::Error>(())
         });
@@ -116,8 +117,7 @@ fn add_handlers(cx: &mut App, core: &Entity<PitakaCore>) {
     let action_core = core.clone();
     cx.on_action(move |_: &ClearRecents, cx: &mut App| {
         action_core.update(cx, |core, cx| {
-            core.settings.recent_files.clear();
-            core.settings.last_opened_file = None;
+            core.settings.clear_recents();
             cx.notify();
         });
         set_menus(cx, &action_core)
@@ -126,7 +126,7 @@ fn add_handlers(cx: &mut App, core: &Entity<PitakaCore>) {
     let action_core = core.clone();
     cx.on_action(move |_: &SaveFile, cx: &mut App| {
         let result = action_core.update(cx, |core, cx| {
-            core.save_file()?;
+            core.save_doc()?;
             cx.notify();
             Ok::<(), std::io::Error>(())
         });
@@ -141,15 +141,19 @@ fn set_menus(cx: &mut App, core: &Entity<PitakaCore>) {
     cx.set_menus(vec![
         Menu {
             name: "Pitaka".into(),
+            disabled: false,
             items: vec![MenuItem::action("Quit Pitaka", Quit)],
         },
         Menu {
             name: "File".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("New", NewFile),
+                MenuItem::separator(),
                 MenuItem::action("Open...", OpenFile),
                 MenuItem::submenu(Menu {
                     name: "Open Recent".into(),
+                    disabled: false,
                     items: get_recents(cx, core),
                 }),
                 MenuItem::separator(),
@@ -163,7 +167,9 @@ fn get_recents(cx: &App, core: &Entity<PitakaCore>) -> Vec<MenuItem> {
     let recents = &core.read(cx).settings.recent_files;
     let mut items: Vec<MenuItem> = recents.iter().cloned().map(|path| recent(path)).collect();
 
+    items.push(MenuItem::separator());
     items.push(MenuItem::action("Clear Recents...", ClearRecents));
+
     items
 }
 

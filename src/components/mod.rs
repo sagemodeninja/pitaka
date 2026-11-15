@@ -1,4 +1,4 @@
-use gpui::{Div, Fill, InteractiveElement, IntoElement, ParentElement, Styled, div, rgb};
+use gpui_kit::{Div, Fill, InteractiveElement, IntoElement, ParentElement, Styled, div, rgb};
 
 pub trait ButtonElement: InteractiveElement {
     fn hover_bg(self, color: impl Into<Fill>) -> Self;
@@ -14,12 +14,12 @@ pub fn button(text: impl IntoElement) -> Div {
     let mut button = div()
         .bg(rgb(0xdddddd))
         .cursor_pointer()
-        .px(gpui::px(12.0))
-        .py(gpui::px(8.0))
-        .rounded(gpui::px(8.0))
+        .px(gpui_kit::px(12.0))
+        .py(gpui_kit::px(8.0))
+        .rounded(gpui_kit::px(8.0))
         .child(text);
 
-    button.style().align_self = Some(gpui::AlignSelf::FlexStart);
+    button.style().align_self = Some(gpui_kit::AlignSelf::FlexStart);
     button
 }
 
