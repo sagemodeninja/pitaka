@@ -1,45 +1,41 @@
+use std::fs;
 use std::io::Result;
 use std::path::PathBuf;
-use std::{fs, io};
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+
+use crate::utils::dir::data_file_dir;
 
 #[derive(Serialize, Deserialize)]
 pub struct Settings {
     pub recent_files: Vec<PathBuf>,
-    pub last_opened_file: Option<PathBuf>,
 }
 
 impl Settings {
     fn new() -> Self {
         Self {
             recent_files: Vec::new(),
-            last_opened_file: None,
         }
     }
 
     pub fn load_or_create() -> Result<Self> {
-        let path = data_file_path("settings.json")?;
+        let path = data_file_dir("settings.json")?;
         if path.exists() { load() } else { create() }
     }
 
-    pub fn update(&self) -> Result<()> {
+    pub fn add_recent_file(&mut self, path: PathBuf) -> Result<()> {
+        if let Some(index) = self.recent_files.iter().position(|item| item == &path) {
+            self.recent_files.remove(index);
+        }
+
+        self.recent_files.insert(0, path.clone());
         save(self)
     }
-}
 
-fn data_file_path(filename: &str) -> io::Result<PathBuf> {
-    let dirs = ProjectDirs::from("com", "garyantier", "pitaka").ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "Could not determine app data directory",
-        )
-    })?;
-    let dir = dirs.data_dir();
-
-    fs::create_dir_all(dir)?;
-    Ok(dir.join(filename))
+    pub fn clear_recents(&mut self) -> Result<()> {
+        self.recent_files.clear();
+        save(self)
+    }
 }
 
 fn create() -> Result<Settings> {
@@ -49,13 +45,13 @@ fn create() -> Result<Settings> {
 }
 
 fn load() -> Result<Settings> {
-    let path = data_file_path("settings.json")?;
+    let path = data_file_dir("settings.json")?;
     let json = fs::read_to_string(path)?;
     Ok(serde_json::from_str(&json)?)
 }
 
 fn save(settings: &Settings) -> Result<()> {
-    let path = data_file_path("settings.json")?;
+    let path = data_file_dir("settings.json")?;
     let json = serde_json::to_string(&settings)?;
     fs::write(&path, json)
 }
