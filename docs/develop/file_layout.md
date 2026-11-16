@@ -1,71 +1,112 @@
+[Pitaka](../../README.md) <span style="color: #888;">/</span> [Development](README.md) <span style="color: #888;">/</span> File Layout
+
 # File Layout
 
-All offsets and sizes are measured in bytes. Multi-byte integers use little-endian encoding. Each pointer is stored as a `u64` offset measured from the beginning of the file.
+> **Warning:** This format is unstable. Any update may make existing saves unreadable. No migration or recovery tools are provided, and compatibility fixes are not planned during development.
 
-## Header
+Sizes and offsets are in bytes. Integers are little-endian. Table offsets are relative to the structure shown; stored offsets are absolute `u64` file positions, with `0` meaning no target. Reserved bytes must be zero. Types describe field encodings; sizes describe serialized bytes, not Rust memory layouts.
 
-The file header occupies 16 bytes. Offsets in this table are absolute file offsets.
+## Contents
 
-| Offset | Size | Field | Description |
-| --- | --- | --- | --- |
-| 0 | 4 | Magic bytes | The exact byte sequence `b"PTKA"`, which identifies the Pitaka file format. |
-| 4 | 2 | Format version | A `u16` identifying the file-format version. Readers use this value to select the appropriate layout and reject unsupported versions. |
-| 6 | 10 | Reserved | Space reserved for future header fields. Writers must fill these bytes with zeros. |
+- [File Header](#file-header)
+- [Collections](#collection)
+- [Records](#records)
+  - [Account Payload](#account-payload)
+  - [Transaction Payload](#transaction-payload)
+- [Structures](#structures)
+  - [Length-Prefixed String](#length-prefixed-string)
 
-## Collection Pointers
+## File Header
 
-Each collection-pointer entry occupies 24 bytes and identifies a collection's type and header location. Entries form a singly linked list, allowing new entries to be appended and linked without relocating existing entries.
+16 bytes at the start of the file.
 
-The offsets in this table are relative to the start of an entry. Pointer values stored within the entry are absolute file offsets.
+| Offset | Size | Field | Type | Description |
+| --- | --- | --- | --- | --- |
+| 0 | 4 | Magic bytes | `[u8; 4]` | `b"PTKA"`. |
+| 4 | 2 | Format version | `u16` | Reject unsupported versions. |
+| 6 | 10 | Reserved | `[u8; 10]` | Future header fields. |
 
-> The first collection-pointer entry begins immediately after the file header, at absolute offset 16
+## Collections
 
-| Offset | Size | Field | Description |
-| --- | --- | --- | --- |
-| 0 | 1 | Collection type | A `u8` identifying the kind of records stored in the collection. |
-| 1 | 8 | Next pointer | Offset of the next collection-pointer entry, or `0` if this is the last entry. |
-| 9 | 8 | Collection position | Offset of the collection header. Must point to a valid collection header outside the file header. |
-| 17 | 7 | Reserved | Space reserved for future entry fields. Writers must fill these bytes with zeros. |
+Collections form a singly linked list of 40-byte headers. The first header starts at file offset `16`.
 
-## Collection Header
+| Offset | Size | Field | Type | Description |
+| --- | --- | --- | --- | --- |
+| 0 | 1 | Collection type | `u8` | Record type identifier. |
+| 1 | 8 | Next collection offset | `u64` | Next collection header. |
+| 9 | 4 | Record count | `u32` | Persisted record count. |
+| 13 | 8 | Next record ID | `u64` | Next record ID; never reduced when records are deleted. |
+| 21 | 8 | First record offset | `u64` | First record. |
+| 29 | 8 | Last record offset | `u64` | Last record. |
+| 37 | 3 | Reserved | `[u8; 3]` | Future header fields. |
 
-Each collection header occupies 32 bytes and stores the persisted record count and the locations of the first and last records. It contains no reserved bytes in the current implementation.
-
-The offsets in this table are relative to the start of the collection header. Stored record pointers are absolute file offsets.
-
-| Offset | Size | Field | Description |
-| --- | --- | --- | --- |
-| 0 | 4 | Record count | A `u32` containing the number of records stored in the collection. |
-| 4 | 8 | First record pointer | Offset of the first record, or `0` if the collection is empty. |
-| 12 | 8 | Last record pointer | Offset of the last record, or `0` if the collection is empty. |
-| 20 | 12 | Reserved | Space reserved for future entry fields. Writers must fill these bytes with zeros. |
-
-An empty collection has a record count of `0` and both record pointers set to `0`. For a collection containing one record, the first and last record pointers refer to the same record.
+> Empty collections have a zero count and zero record offsets. A single-record collection has matching first and last offsets.
 
 ## Records
 
-Each record contains a 16-byte link header followed by its payload. Records form a doubly linked list within their collection. The payload layout depends on the collection type, so the total record size may vary.
+A 16-byte link header followed by a collection-specific payload. Records form a doubly linked list.
 
-Offsets in this table are relative to the start of the record. Stored record pointers are absolute file offsets.
+| Offset | Size | Field | Type | Description |
+| --- | --- | --- | --- | --- |
+| 0 | 8 | Previous record offset | `u64` | Previous record. |
+| 8 | 8 | Next record offset | `u64` | Next record. |
+| 16 | Variable | Payload | Varies | See layouts below. |
 
-| Offset | Size | Field | Description |
-| --- | --- | --- | --- |
-| 0 | 8 | Previous record pointer | Offset of the previous record in the collection, or `0` if this is the first record. |
-| 8 | 8 | Next record pointer | Offset of the next record in the collection, or `0` if this is the last record. |
-| 16 | Variable | Payload | The record's data, encoded according to the collection type. |
+> Payload offsets start after the link header.
 
-### Transaction Payload
+<a id="account-payload"></a>
 
-Offsets in this table are relative to the start of the payload, which begins 16 bytes after the start of the record. `N` is the description's UTF-8 byte length, not its character count.
+<details>
+<summary><strong>Account Payload</strong></summary>
 
-| Offset | Size | Field | Description |
-| --- | --- | --- | --- |
-| 0 | 8 | Description length | Number of UTF-8 bytes in the description. The current implementation encodes this as a little-endian `usize`, which occupies 8 bytes on the current 64-bit target. |
-| 8 | N | Description | Exactly `N` UTF-8 bytes, without a null terminator or padding. |
-| 8 + N | 8 | Amount | An `i64` storing the signed amount in centavos. |
+<br>
 
-The transaction payload occupies `16 + N` bytes. Including the link header, the complete transaction record occupies `32 + N` bytes.
+A place where money is held, such as a bank account, wallet, or piggy bank.
 
-> Portability note: the current description-length implementation depends on the platform's `usize` width. A fixed-width integer is needed to make this field consistent across 32-bit and 64-bit targets.
+| Offset | Size | Field | Type | Description |
+| --- | --- | --- | --- | --- |
+| 0 | 2 | ID | `u16` | Unique within the account collection. |
+| 2 | 4 + N | Display name | [Length-prefixed string](#length-prefixed-string) | Account name shown in the UI. |
 
-> Planned: a dedicated free-space collection will track the offsets and lengths of reusable regions left by deleted records. Writers can reuse these regions or compact the file when reclaimable space becomes excessive.
+Size: `6 + N` bytes; `22 + N` including the link header.
+
+</details>
+
+<a id="transaction-payload"></a>
+
+<details>
+<summary><strong>Transaction</strong></summary>
+
+<br>
+
+| Offset | Size | Field | Type | Description |
+| --- | --- | --- | --- | --- |
+| 0 | 8 | ID | `u64` | Unique within the transaction collection. |
+| 8 | 2 | Account ID | `u16` | Account this transaction belongs to. |
+| 10 | 4 + N | Description | [Length-prefixed string](#length-prefixed-string) | Transaction description. |
+| 14 + N | 8 | Amount | `i64` | Signed amount in centavos. |
+
+Size: `22 + N` bytes; `38 + N` including the link header.
+
+**Planned:** a free-space collection will track deleted regions for reuse or compaction.
+
+</details>
+
+## Structures
+
+<a id="length-prefixed-string"></a>
+
+<details>
+<summary><strong>Length-Prefixed String</strong></summary>
+<br>
+
+A little-endian `u32` byte length followed by UTF-8 data, with no padding or terminator. `N` is the UTF-8 byte length, not the character count.
+
+| Offset | Size | Field | Type | Description |
+| --- | --- | --- | --- | --- |
+| 0 | 4 | Length | `u32` | UTF-8 byte length. |
+| 4 | N | Data | UTF-8 bytes | String contents. |
+
+Size: `4 + N` bytes. Maximum data length: `u32::MAX` bytes.
+
+</details>

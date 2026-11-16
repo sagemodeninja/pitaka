@@ -1,15 +1,15 @@
+mod account;
+mod transaction;
+
+pub use account::*;
+pub use transaction::*;
+
 use std::fs::File;
 use std::io::{Result, Seek, SeekFrom, Write};
 
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
 };
-
-#[derive(Clone)]
-pub struct Transaction {
-    pub description: String,
-    pub amount_centavos: i64,
-}
 
 pub struct Record<T: FileHandle> {
     pub o_prev: u64,
@@ -28,33 +28,8 @@ pub struct Collection<T: FileHandle> {
 
 pub trait FileHandle: Sized {
     fn len(&self) -> u32;
-    fn write(
-        &mut self,
-        file: &mut File,
-        cursor: &mut u64,
-    ) -> Result<()>;
+    fn write(&mut self, file: &mut File, cursor: &mut u64) -> Result<()>;
     fn read(file: &mut File) -> Result<Self>;
-}
-
-impl FileHandle for Transaction {
-    fn len(&self) -> u32 {
-        16 + self.description.len() as u32
-    }
-
-    fn write(&mut self, file: &mut File, _: &mut u64) -> Result<()> {
-        file.write_padded_str(&self.description)?;
-        file.write_all(&self.amount_centavos.to_le_bytes())
-    }
-
-    fn read(file: &mut File) -> Result<Self> {
-        let description = file.read_padded_str()?;
-        let amount_centavos = file.read_le_i64()?;
-
-        Ok(Transaction {
-            description,
-            amount_centavos,
-        })
-    }
 }
 
 impl<T: FileHandle> Record<T> {
@@ -72,11 +47,7 @@ impl<T: FileHandle> FileHandle for Record<T> {
         16 + self.item.len()
     }
 
-    fn write(
-        &mut self,
-        file: &mut File,
-        _doc: &mut u64,
-    ) -> Result<()> {
+    fn write(&mut self, file: &mut File, _doc: &mut u64) -> Result<()> {
         file.write_all(&self.o_prev.to_le_bytes())?;
         file.write_all(&self.o_next.to_le_bytes())?;
         self.item.write(file, _doc)
@@ -152,11 +123,7 @@ impl<T: FileHandle> FileHandle for Collection<T> {
         0
     }
 
-    fn write(
-        &mut self,
-        file: &mut File,
-        cursor: &mut u64,
-    ) -> Result<()> {
+    fn write(&mut self, file: &mut File, cursor: &mut u64) -> Result<()> {
         let append_len = self.for_append.len() as u32;
         let record_cnt = self.count + append_len;
 

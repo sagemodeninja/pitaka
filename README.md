@@ -1,6 +1,10 @@
 # Pitaka (Wallet)
 
-Another "money" based project for learning Rust.
+Another application based on my original "eMoney" project this time written in Rust.
+
+## Documentation
+
+- [Development](docs/develop/README.md) — file format and implementation notes.
 
 ### Contributors
 

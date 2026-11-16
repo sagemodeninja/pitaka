@@ -5,9 +5,7 @@ use std::io::{Error, ErrorKind, Result, Seek, Write};
 use std::path::PathBuf;
 
 use crate::core::document::collection::{Collection, FileHandle, Transaction};
-use crate::utils::extensions::file::{
-    FileCursorExtensions, FileReadExtensions,
-};
+use crate::utils::extensions::file::{FileCursorExtensions, FileReadExtensions};
 
 const MAGIC_NUMBER: [u8; 4] = *b"PTKA";
 const CURRENT_FORMAT_VERSION: u16 = 1;
@@ -18,8 +16,7 @@ const COLLECTION_SIZE: u64 = 32;
 const MINIMUM_FILE_SIZE: u64 = HEADER_SIZE + POINTER_SIZE + COLLECTION_SIZE;
 
 const INIT_COLLECTION_COUNT: u64 = 1;
-const FIRST_COLLECTION_OFFSET: u64 =
-    HEADER_SIZE + INIT_COLLECTION_COUNT * POINTER_SIZE;
+const FIRST_COLLECTION_OFFSET: u64 = HEADER_SIZE + INIT_COLLECTION_COUNT * POINTER_SIZE;
 
 pub struct PitakaDocument {
     file: File,
@@ -102,9 +99,7 @@ fn create_document(doc: &mut PitakaDocument) -> Result<()> {
     }
 
     // Write last byte which fills gaps with 0.
-    file.move_to(
-        FIRST_COLLECTION_OFFSET + INIT_COLLECTION_COUNT * COLLECTION_SIZE,
-    )?;
+    file.move_to(FIRST_COLLECTION_OFFSET + INIT_COLLECTION_COUNT * COLLECTION_SIZE)?;
     file.write_all(&[0u8])?;
 
     doc.cursor = file.stream_position()?;
@@ -120,9 +115,7 @@ fn read_document(mut file: File) -> Result<PitakaDocument> {
     if file_len < MINIMUM_FILE_SIZE {
         return Err(Error::new(
             ErrorKind::InvalidData,
-            format!(
-                "Document is too short: expected at least {MINIMUM_FILE_SIZE} bytes."
-            ),
+            format!("Document is too short: expected at least {MINIMUM_FILE_SIZE} bytes."),
         ));
     }
 

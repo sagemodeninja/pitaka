@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, Read, Result, Seek, SeekFrom, Write};
+use std::io::{self, Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 
 pub trait FileCursorExtensions {
     fn move_to(&mut self, pos: u64) -> Result<u64>;
@@ -16,11 +16,15 @@ pub trait FileReadExtensions {
     fn read_le_i64(&mut self) -> Result<i64>;
     fn read_le_u64(&mut self) -> Result<u64>;
 
-    fn read_padded_str(&mut self) -> Result<String>;
+    fn read_len_pre_str(&mut self) -> Result<String>;
 }
 
 pub trait FileWriteExtensions {
-    fn write_padded_str(&mut self, value: &String) -> Result<()>;
+    fn write_le_u16(&mut self, value: u16) -> Result<()>;
+    fn write_le_i64(&mut self, value: i64) -> Result<()>;
+    fn write_le_u64(&mut self, value: u64) -> Result<()>;
+
+    fn write_len_pre_str(&mut self, value: &String) -> Result<()>;
 }
 
 impl FileCursorExtensions for File {
@@ -76,24 +80,39 @@ impl FileReadExtensions for File {
     }
 
     // String...
-    fn read_padded_str(&mut self) -> Result<String> {
-        let len_buf = self.read_8_bytes()?;
-        let len = usize::from_le_bytes(len_buf);
+    fn read_len_pre_str(&mut self) -> Result<String> {
+        let len = self.read_le_u32()? as usize;
 
         let mut str_buf = vec![0u8; len];
         self.read_exact(&mut str_buf)?;
 
-        String::from_utf8(str_buf).map_err(|err| {
-            io::Error::new(io::ErrorKind::InvalidData, err)
-        })
+        String::from_utf8(str_buf).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
 }
 
 impl FileWriteExtensions for File {
-    fn write_padded_str(&mut self, value: &String) -> Result<()> {
-        let bytes: &[u8] = value.as_bytes();
+    fn write_le_u16(&mut self, value: u16) -> Result<()> {
+        self.write_all(&value.to_le_bytes())
+    }
 
-        self.write_all(&bytes.len().to_le_bytes())?;
+    fn write_le_i64(&mut self, value: i64) -> Result<()> {
+        self.write_all(&value.to_le_bytes())
+    }
+
+    fn write_le_u64(&mut self, value: u64) -> Result<()> {
+        self.write_all(&value.to_le_bytes())
+    }
+
+    fn write_len_pre_str(&mut self, text: &String) -> Result<()> {
+        let len = u32::try_from(text.len()).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                "String exceeds u32 byte length limit",
+            )
+        })?;
+        let bytes: &[u8] = text.as_bytes();
+
+        self.write_all(&len.to_le_bytes())?;
         self.write_all(&bytes)?;
 
         Ok(())
