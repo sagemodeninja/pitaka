@@ -1,5 +1,6 @@
 pub mod collection;
 
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Error, ErrorKind, Seek, Write};
@@ -20,6 +21,7 @@ const MINIMUM_FILE_SIZE: u64 = HEADER_SIZE + COLLECTION_SIZE;
 pub struct PitakaDocument {
     file: File,
     cursor: u64,
+    acct_trans: HashMap<u16, Vec<u64>>,
 
     pub accounts: Collection<Account>,
     pub transactions: Collection<Transaction>,
@@ -45,6 +47,7 @@ impl PitakaDocument {
         Ok(PitakaDocument {
             file,
             cursor,
+            acct_trans: HashMap::new(),
             accounts,
             transactions,
         })
@@ -61,6 +64,14 @@ impl PitakaDocument {
 
     pub fn get_all_trans(&mut self) -> io::Result<Vec<Transaction>> {
         self.transactions.get_all(&mut self.file)
+    }
+
+    pub fn get_acct_trans(&mut self, id: u16) -> io::Result<Vec<Transaction>> {
+        if let Some(offsets) = self.acct_trans.get(&id) {
+            self.transactions.get_by_offsets(offsets, &mut self.file)
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     pub fn save(&mut self) -> io::Result<()> {
@@ -122,8 +133,8 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
         let c_type = file.read_le_u8()?;
 
         match c_type {
-            1 => accounts.index(o_c_curr, &mut file)?,
-            2 => transactions.index(o_c_curr, &mut file)?,
+            1 => accounts.read(o_c_curr, &mut file)?,
+            2 => transactions.read(o_c_curr, &mut file)?,
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
@@ -139,12 +150,35 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
         }
     }
 
+    let acct_trans_ids = index_transactions(&mut transactions, &mut file)?;
     file.move_to(0)?;
 
     Ok(PitakaDocument {
         file,
         cursor: file_len,
+        acct_trans: acct_trans_ids,
         accounts,
         transactions,
     })
+}
+
+fn index_transactions(
+    col: &mut Collection<Transaction>,
+    file: &mut File,
+) -> io::Result<HashMap<u16, Vec<u64>>> {
+    let mut acct_trans_ids = HashMap::<u16, Vec<u64>>::new();
+
+    let mut o_r_curr = col.o_first_record;
+    for _ in 0..col.record_count {
+        file.move_to(o_r_curr + 8)?;
+        let o_r_next = file.read_le_u64()?;
+
+        file.move_for(8)?;
+        let acct_id = file.read_le_u16()?;
+
+        acct_trans_ids.entry(acct_id).or_default().push(o_r_curr);
+        o_r_curr = o_r_next;
+    }
+
+    Ok(acct_trans_ids)
 }
