@@ -9,7 +9,7 @@ Sizes and offsets are in bytes. Integers are little-endian. Table offsets are re
 ## Contents
 
 - [File Header](#file-header)
-- [Collections](#collection)
+- [Collections](#collections)
 - [Records](#records)
   - [Account Payload](#account-payload)
   - [Transaction Payload](#transaction-payload)
@@ -28,17 +28,17 @@ Sizes and offsets are in bytes. Integers are little-endian. Table offsets are re
 
 ## Collections
 
-Collections form a singly linked list of 40-byte headers. The first header starts at file offset `16`.
+Collections form a singly linked list of 48-byte headers, including 7 reserved bytes for future fields. The first header starts at file offset `16`.
 
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
-| 0 | 1 | Collection type | `u8` | Record type identifier. |
-| 1 | 8 | Next collection offset | `u64` | Next collection header. |
-| 9 | 4 | Record count | `u32` | Persisted record count. |
-| 13 | 8 | Next record ID | `u64` | Next record ID; never reduced when records are deleted. |
-| 21 | 8 | First record offset | `u64` | First record. |
-| 29 | 8 | Last record offset | `u64` | Last record. |
-| 37 | 3 | Reserved | `[u8; 3]` | Future header fields. |
+| 0 | 8 | Next collection offset | `u64` | Next collection header. |
+| 8 | 1 | Collection type | `u8` | Record type identifier. |
+| 9 | 8 | Next record ID | `u64` | Next record ID; never reduced when records are deleted. |
+| 17 | 8 | Record count | `u64` | Persisted record count. |
+| 25 | 8 | First record offset | `u64` | First record. |
+| 33 | 8 | Last record offset | `u64` | Last record. |
+| 41 | 7 | Reserved | `[u8; 7]` | Future header fields. |
 
 > Empty collections have a zero count and zero record offsets. A single-record collection has matching first and last offsets.
 

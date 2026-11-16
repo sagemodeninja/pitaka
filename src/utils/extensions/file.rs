@@ -20,6 +20,9 @@ pub trait FileReadExtensions {
 }
 
 pub trait FileWriteExtensions {
+    fn write_zeros(&mut self, len: usize) -> Result<()>;
+
+    fn write_le_u8(&mut self, value: u8) -> Result<()>;
     fn write_le_u16(&mut self, value: u16) -> Result<()>;
     fn write_le_i64(&mut self, value: i64) -> Result<()>;
     fn write_le_u64(&mut self, value: u64) -> Result<()>;
@@ -91,6 +94,14 @@ impl FileReadExtensions for File {
 }
 
 impl FileWriteExtensions for File {
+    fn write_zeros(&mut self, len: usize) -> Result<()> {
+        self.write_all(&vec![0u8; len])
+    }
+
+    fn write_le_u8(&mut self, value: u8) -> Result<()> {
+        self.write_all(&[value])
+    }
+
     fn write_le_u16(&mut self, value: u16) -> Result<()> {
         self.write_all(&value.to_le_bytes())
     }

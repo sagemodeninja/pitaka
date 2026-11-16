@@ -91,6 +91,8 @@ fn render_main(view: &mut Pitaka, cx: &mut Context<Pitaka>) -> Div {
                             if let Some(amnt) = amnt_str_to_centavos(amnt.into()) {
                                 println!("Desc: {}, Amnt: {}", desc, amnt);
                                 doc.transactions.add(Transaction {
+                                    id: 1,
+                                    account_id: 1,
                                     description: desc.into(),
                                     amount_centavos: amnt,
                                 });

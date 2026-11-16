@@ -1,115 +1,83 @@
 pub mod collection;
 
 use std::fs::{File, OpenOptions};
-use std::io::{Error, ErrorKind, Result, Seek, Write};
+use std::io;
+use std::io::{Error, ErrorKind, Seek, Write};
 use std::path::PathBuf;
 
-use crate::core::document::collection::{Collection, FileHandle, Transaction};
-use crate::utils::extensions::file::{FileCursorExtensions, FileReadExtensions};
+use crate::core::document::collection::{Account, Collection, FileHandle, Transaction};
+use crate::utils::extensions::file::{
+    FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
+};
 
 const MAGIC_NUMBER: [u8; 4] = *b"PTKA";
 const CURRENT_FORMAT_VERSION: u16 = 1;
 
 const HEADER_SIZE: u64 = 16;
-const POINTER_SIZE: u64 = 24;
-const COLLECTION_SIZE: u64 = 32;
-const MINIMUM_FILE_SIZE: u64 = HEADER_SIZE + POINTER_SIZE + COLLECTION_SIZE;
-
-const INIT_COLLECTION_COUNT: u64 = 1;
-const FIRST_COLLECTION_OFFSET: u64 = HEADER_SIZE + INIT_COLLECTION_COUNT * POINTER_SIZE;
+const COLLECTION_SIZE: u64 = 48;
+const MINIMUM_FILE_SIZE: u64 = HEADER_SIZE + COLLECTION_SIZE;
 
 pub struct PitakaDocument {
     file: File,
     cursor: u64,
+
+    pub accounts: Collection<Account>,
     pub transactions: Collection<Transaction>,
 }
 
 impl PitakaDocument {
-    pub fn create(path: &PathBuf) -> Result<Self> {
-        let file = open_file(path)?;
+    // SEE: /docs/develop/file_layout.md
+    pub fn create(path: &PathBuf) -> io::Result<Self> {
+        let mut file = open_file(path, true)?;
 
-        let mut doc = Self {
+        // Header...
+        file.move_to(0)?;
+        file.write_all(&MAGIC_NUMBER)?;
+        file.write_le_u16(CURRENT_FORMAT_VERSION)?;
+        file.write_zeros(10)?; // Reserved...
+
+        // Collections...
+        let accounts = Collection::create(1, &mut file)?;
+        let transactions = Collection::create(2, &mut file)?;
+
+        let cursor = file.stream_position()?;
+
+        Ok(PitakaDocument {
             file,
-            cursor: 0,
-            transactions: Collection::new(0),
-        };
-        create_document(&mut doc)?;
-
-        Ok(doc)
+            cursor,
+            accounts,
+            transactions,
+        })
     }
 
-    pub fn open(path: &PathBuf) -> Result<Self> {
-        let file = open_file(path)?;
+    pub fn open(path: &PathBuf) -> io::Result<Self> {
+        let file = open_file(path, false)?;
         read_document(file)
     }
 
-    pub fn get_all_trans(&mut self) -> Result<Vec<Transaction>> {
+    pub fn get_all_trans(&mut self) -> io::Result<Vec<Transaction>> {
         self.transactions.get_all(&mut self.file)
     }
 
-    pub fn save(&mut self) -> Result<()> {
+    pub fn save(&mut self) -> io::Result<()> {
         self.transactions.write(&mut self.file, &mut self.cursor)
     }
 }
 
-fn open_file(path: &PathBuf) -> Result<File> {
+fn open_file(path: &PathBuf, truncate: bool) -> io::Result<File> {
     OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
+        .truncate(truncate)
         .open(path)
 }
 
-fn create_document(doc: &mut PitakaDocument) -> Result<()> {
-    let file = &mut doc.file;
-
-    file.move_to(0)?;
-
-    // Header...
-    file.write_all(&MAGIC_NUMBER)?;
-    file.write_all(&CURRENT_FORMAT_VERSION.to_le_bytes())?;
-    file.move_for(10)?; // Reserved
-
-    // Pointers...
-    for c_type in 1..=INIT_COLLECTION_COUNT {
-        let collection = match c_type {
-            1 => &mut doc.transactions,
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Unsupported collection type: {c_type}."),
-                ));
-            }
-        };
-
-        let o_p_next = if c_type < INIT_COLLECTION_COUNT {
-            HEADER_SIZE + c_type * POINTER_SIZE
-        } else {
-            0
-        };
-
-        let c_pos = FIRST_COLLECTION_OFFSET + (c_type - 1) * COLLECTION_SIZE;
-        collection.position = c_pos;
-
-        // Pointer...
-        file.write_all(&[c_type as u8])?;
-        file.write_all(&o_p_next.to_le_bytes())?;
-        file.write_all(&c_pos.to_le_bytes())?;
-        file.move_for(7)?; // Reserved
-    }
-
-    // Write last byte which fills gaps with 0.
-    file.move_to(FIRST_COLLECTION_OFFSET + INIT_COLLECTION_COUNT * COLLECTION_SIZE)?;
-    file.write_all(&[0u8])?;
-
-    doc.cursor = file.stream_position()?;
-    Ok(())
-}
-
 // SEE: /docs/develop/file_layout.md
-fn read_document(mut file: File) -> Result<PitakaDocument> {
+fn read_document(mut file: File) -> io::Result<PitakaDocument> {
     let file_len = file.metadata()?.len();
 
+    // Header...
     file.move_to(0)?;
 
     if file_len < MINIMUM_FILE_SIZE {
@@ -139,15 +107,17 @@ fn read_document(mut file: File) -> Result<PitakaDocument> {
     file.move_for(10)?; // Reserved.
 
     // Collection discovery...
-    let mut transactions = Collection::<Transaction>::new(0);
+    let mut accounts = Collection::<Account>::empty(0);
+    let mut transactions = Collection::<Transaction>::empty(0);
 
     loop {
+        let o_c_curr = file.stream_position()?;
+        let o_c_next = file.read_le_u64()?;
         let c_type = file.read_le_u8()?;
-        let c_next = file.read_le_u64()?;
-        let c_pos = file.read_le_u64()?;
 
         match c_type {
-            1 => transactions.position = c_pos,
+            1 => accounts.index(o_c_curr, &mut file)?,
+            2 => transactions.index(o_c_curr, &mut file)?,
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
@@ -156,21 +126,19 @@ fn read_document(mut file: File) -> Result<PitakaDocument> {
             }
         }
 
-        if c_next > 0 {
-            file.move_to(c_next)?;
+        if o_c_next > 0 {
+            file.move_to(o_c_next)?;
         } else {
             break;
         }
     }
 
-    // Index collections...
-    transactions.index(&mut file)?;
-
     file.move_to(0)?;
 
     Ok(PitakaDocument {
-        file: file,
+        file,
         cursor: file_len,
+        accounts,
         transactions,
     })
 }
