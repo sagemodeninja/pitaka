@@ -24,10 +24,10 @@ pub struct Record<T: FileHandle> {
 
 pub struct Collection<T: FileHandle> {
     next_id: u64,
-    record_count: u64,
     for_append: Vec<Record<T>>,
 
     pub position: u64,
+    pub record_count: u64,
     pub o_first_record: u64,
     pub o_last_record: u64,
 }
@@ -102,11 +102,11 @@ impl<T: FileHandle> Collection<T> {
         Ok(Self::empty(o_c_curr))
     }
 
-    pub fn index(&mut self, position: u64, file: &mut File) -> io::Result<()> {
+    pub fn read(&mut self, position: u64, file: &mut File) -> io::Result<()> {
         self.next_id = file.read_le_u64()?;
-        self.record_count = file.read_le_u64()?;
 
         self.position = position;
+        self.record_count = file.read_le_u64()?;
         self.o_first_record = file.read_le_u64()?;
         self.o_last_record = file.read_le_u64()?;
         // +7 reserved bytes.
@@ -128,6 +128,24 @@ impl<T: FileHandle> Collection<T> {
             items.push(record.item);
 
             cursor = record.o_next;
+        }
+
+        for item in &self.for_append {
+            items.push(item.item.clone());
+        }
+
+        Ok(items)
+    }
+
+    pub fn get_by_offsets(&self, offsets: &Vec<u64>, file: &mut File) -> io::Result<Vec<T>>
+    where
+        T: Clone,
+    {
+        let mut items: Vec<T> = vec![];
+
+        for &offset in offsets {
+            file.move_to(offset + 16)?;
+            items.push(T::read(file)?);
         }
 
         for item in &self.for_append {

@@ -169,20 +169,25 @@ fn render_accts(view: &PitakaView, cx: &mut Context<PitakaView>) -> Div {
 }
 
 fn render_trans(view: &PitakaView, cx: &mut App) -> Div {
-    view.state.update(cx, |state, _| match &mut state.document {
-        Some(doc) => match doc.get_all_trans() {
-            Ok(records) => column()
-                .child(row().gap_1().child("Description").child("Amount"))
-                .children(records.iter().map(|trans| {
-                    row()
-                        .gap_1()
-                        .child(trans.description.clone())
-                        .child(format_centavos(&trans.amount_centavos))
-                })),
-            Err(err) => div().child(format!("Something went wrong: {err}")),
-        },
+    let records = view.state.update(cx, |state, _| {
+        state
+            .document
+            .as_mut()
+            .map(|doc| doc.get_acct_trans(view.selected_acct_id))
+    });
+
+    match records {
+        Some(Ok(records)) => column()
+            .child(row().gap_1().child("Description").child("Amount"))
+            .children(records.iter().map(|trans| {
+                row()
+                    .gap_1()
+                    .child(trans.description.clone())
+                    .child(format_centavos(&trans.amount_centavos))
+            })),
+        Some(Err(err)) => div().child(format!("Something went wrong: {err}")),
         None => div().child("Please create/open a file first..."),
-    })
+    }
 }
 
 fn format_centavos(amount: &i64) -> String {
