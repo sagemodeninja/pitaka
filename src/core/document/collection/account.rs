@@ -12,6 +12,7 @@ use crate::{
 const ID_SIZE: u32 = 2;
 const DP_LENGTH_SIZE: u32 = 4;
 
+#[derive(Clone)]
 pub struct Account {
     pub id: u16,
     pub display_name: String,

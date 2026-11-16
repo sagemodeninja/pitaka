@@ -6,22 +6,25 @@ use gpui_kit::component::empty::{
 };
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::{
-    App, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
+    App, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
+    StatefulInteractiveElement, Styled, Window, div, px, rgb,
 };
 
 use crate::components::LaunchAction;
 use crate::components::{column, row};
-use crate::core::document::collection::Transaction;
+use crate::core::document::collection::{Account, Transaction};
 use crate::core::state::PitakaState;
 use crate::utils::actions::{NewFile, OpenFile};
 
-pub struct Pitaka {
+pub struct PitakaView {
     pub state: Entity<PitakaState>,
+    pub selected_acct_id: u16,
+    pub acct_dname_ipt: Entity<InputState>,
     pub trans_desc_ipt: Entity<InputState>,
     pub trans_amnt_ipt: Entity<InputState>,
 }
 
-impl Render for Pitaka {
+impl Render for PitakaView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let content = if self.state.read(_cx).document.is_some() {
             render_main(self, _cx)
@@ -71,41 +74,101 @@ fn render_welcome(_: &App) -> Div {
 }
 
 // View when a doc is open.
-fn render_main(view: &mut Pitaka, cx: &mut Context<Pitaka>) -> Div {
-    column()
+fn render_main(view: &mut PitakaView, cx: &mut Context<PitakaView>) -> Div {
+    row()
         .size_full()
-        .gap_2()
-        .p_4()
-        .child(Input::new(&view.trans_desc_ipt).cleanable(true))
-        .child(Input::new(&view.trans_amnt_ipt))
         .child(
-            Button::new("add-trans-btn")
-                .primary()
-                .label("Add Transaction")
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.state.update(cx, |state, cx| {
-                        if let Some(doc) = &mut state.document {
-                            let desc = this.trans_desc_ipt.read(cx).value();
-                            let amnt = this.trans_amnt_ipt.read(cx).value();
-
-                            if let Some(amnt) = amnt_str_to_centavos(amnt.into()) {
-                                println!("Desc: {}, Amnt: {}", desc, amnt);
-                                doc.transactions.add(Transaction {
-                                    id: 1,
-                                    account_id: 1,
-                                    description: desc.into(),
-                                    amount_centavos: amnt,
-                                });
-                                cx.notify();
-                            }
-                        }
-                    })
-                })),
+            column()
+                .gap_2()
+                .p_4()
+                .w(px(320.))
+                .child(Input::new(&view.acct_dname_ipt).cleanable(true))
+                .child(
+                    Button::new("add-acct-btn")
+                        .primary()
+                        .label("Add Account")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.state.update(cx, |state, cx| {
+                                if let Some(doc) = &mut state.document {
+                                    let dname = this.acct_dname_ipt.read(cx).value();
+                                    doc.accounts.add(|id| Account {
+                                        id: id as u16,
+                                        display_name: dname.into(),
+                                    });
+                                    cx.notify();
+                                }
+                            })
+                        })),
+                )
+                .child(render_accts(view, cx)),
         )
-        .child(render_trans(view, cx))
+        .child(
+            column()
+                .gap_2()
+                .p_4()
+                .w(px(320.))
+                .child(Input::new(&view.trans_desc_ipt).cleanable(true))
+                .child(Input::new(&view.trans_amnt_ipt))
+                .child(
+                    Button::new("add-trans-btn")
+                        .primary()
+                        .label("Add Transaction")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.state.update(cx, |state, cx| {
+                                if let Some(doc) = &mut state.document {
+                                    let desc = this.trans_desc_ipt.read(cx).value();
+                                    let amnt = this.trans_amnt_ipt.read(cx).value();
+
+                                    if let Some(amnt) = amnt_str_to_centavos(amnt.into()) {
+                                        doc.transactions.add(|id| Transaction {
+                                            id,
+                                            account_id: this.selected_acct_id,
+                                            description: desc.into(),
+                                            amount_centavos: amnt,
+                                        });
+                                        cx.notify();
+                                    }
+                                }
+                            })
+                        })),
+                )
+                .child(render_trans(view, cx)),
+        )
 }
 
-fn render_trans(view: &Pitaka, cx: &mut App) -> Div {
+fn render_accts(view: &PitakaView, cx: &mut Context<PitakaView>) -> Div {
+    let records = view.state.update(cx, |state, _| {
+        state.document.as_mut().map(|doc| doc.get_all_accts())
+    });
+
+    match records {
+        Some(Ok(records)) => {
+            column()
+                .child(row().gap_1().child("Name"))
+                .children(records.into_iter().map(|acct| {
+                    let highlight = if acct.id == view.selected_acct_id {
+                        rgb(0xff0000)
+                    } else {
+                        rgb(0xffffff)
+                    };
+
+                    row()
+                        .id(format!("acct_row_{}", acct.id))
+                        .bg(highlight)
+                        .gap_1()
+                        .child(acct.display_name)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.selected_acct_id = acct.id;
+                            cx.notify();
+                        }))
+                }))
+        }
+        Some(Err(err)) => div().child(format!("Something went wrong: {err}")),
+        None => div().child("Please create/open a file first..."),
+    }
+}
+
+fn render_trans(view: &PitakaView, cx: &mut App) -> Div {
     view.state.update(cx, |state, _| match &mut state.document {
         Some(doc) => match doc.get_all_trans() {
             Ok(records) => column()

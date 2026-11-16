@@ -12,7 +12,7 @@ use gpui_kit::{App, AppContext, Entity, WindowOptions, assets};
 
 use crate::utils::actions::AppActions;
 use crate::utils::keybinding::AppKeyBindings;
-use crate::views::home::Pitaka;
+use crate::views::home::PitakaView;
 use crate::{core::state::PitakaState, utils::menu::PitakaMenuUtils};
 
 fn main() {
@@ -53,8 +53,10 @@ fn main() {
 
 fn go_home(app: &mut App, state: &Entity<PitakaState>) {
     gpui_kit::open_window(WindowOptions::default(), app, |window, cx| {
-        cx.new(|cx| Pitaka {
+        cx.new(|cx| PitakaView {
             state: state.clone(),
+            selected_acct_id: 0,
+            acct_dname_ipt: cx.new(|cx| InputState::new(window, cx).placeholder("Enter name")),
             trans_desc_ipt: cx
                 .new(|cx| InputState::new(window, cx).placeholder("Enter description")),
             trans_amnt_ipt: cx.new(|cx| {

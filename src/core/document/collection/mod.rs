@@ -130,15 +130,18 @@ impl<T: FileHandle> Collection<T> {
             cursor = record.o_next;
         }
 
-        for trans in &self.for_append {
-            items.push(trans.item.clone());
+        for item in &self.for_append {
+            items.push(item.item.clone());
         }
 
         Ok(items)
     }
 
-    pub fn add(&mut self, item: T) {
+    pub fn add(&mut self, ctor: impl FnOnce(u64) -> T) {
+        let item = ctor(self.next_id);
         let record = Record::new(self.o_last_record, item);
+
+        self.next_id += 1;
         self.for_append.push(record);
     }
 }
@@ -149,61 +152,57 @@ impl<T: FileHandle> FileHandle for Collection<T> {
     }
 
     fn write(&mut self, file: &mut File, cursor: &mut u64) -> io::Result<()> {
-        todo!()
-        // let append_len = self.for_append.len() as u32;
-        // let record_cnt = self.record_count + append_len;
+        let append_len = self.for_append.len() as u64;
+        let record_cnt = self.record_count + append_len;
 
-        // // Right records...
-        // if append_len > 0 {
-        //     let mut records = self.for_append.iter_mut().peekable();
+        // Right records...
+        if append_len > 0 {
+            let mut records = self.for_append.iter_mut().peekable();
 
-        //     let mut o_prev = self.o_last_record;
-        //     let mut o_next = if self.o_last_record == 0 {
-        //         // TODO: Revisit because this might not be correct.
-        //         self.position + 20
-        //     } else {
-        //         *cursor
-        //     };
+            let mut o_prev = self.o_last_record;
+            let mut o_next = *cursor;
 
-        //     if self.o_last_record == 0 {
-        //         self.o_first_record = o_next;
-        //     } else {
-        //         let offset = self.o_last_record + 8;
-        //         file.seek(SeekFrom::Start(offset))?;
-        //         file.write_all(&o_next.to_le_bytes())?;
-        //     }
+            if self.o_last_record == 0 {
+                self.o_first_record = o_next;
+            } else {
+                let offset = self.o_last_record + 8;
+                file.seek(SeekFrom::Start(offset))?;
+                file.write_all(&o_next.to_le_bytes())?;
+            }
 
-        //     file.seek(SeekFrom::Start(o_next))?;
+            file.seek(SeekFrom::Start(o_next))?;
 
-        //     while let Some(record) = &mut records.next() {
-        //         record.o_prev = o_prev;
-        //         o_prev = o_next;
-        //         match records.peek() {
-        //             Some(_) => {
-        //                 o_next += record.len() as u64;
-        //                 record.o_next = o_next;
-        //             }
-        //             None => {
-        //                 record.o_next = 0;
-        //                 self.o_last_record = o_next;
-        //             }
-        //         }
+            while let Some(record) = &mut records.next() {
+                record.o_prev = o_prev;
+                o_prev = o_next;
+                match records.peek() {
+                    Some(_) => {
+                        o_next += record.len() as u64;
+                        record.o_next = o_next;
+                    }
+                    None => {
+                        record.o_next = 0;
+                        self.o_last_record = o_next;
+                    }
+                }
 
-        //         record.write(file, cursor)?;
-        //     }
-        // }
+                record.write(file, cursor)?;
+            }
+        }
 
-        // // Update cursor so next append knows
-        // // where to start.
-        // *cursor = file.stream_position()? + 1;
+        self.for_append.clear();
+        // Update cursor so next append knows
+        // where to start.
+        *cursor = file.stream_position()? + 1;
 
-        // // Update/write collection header...
-        // file.seek(SeekFrom::Start(self.position))?;
-        // file.write_all(&record_cnt.to_le_bytes())?;
-        // file.write_all(&self.o_first_record.to_le_bytes())?;
-        // file.write_all(&self.o_last_record.to_le_bytes())?;
+        // Update collection header...
+        file.move_to(self.position + 9)?;
+        file.write_le_u64(self.next_id)?;
+        file.write_le_u64(record_cnt)?;
+        file.write_le_u64(self.o_first_record)?;
+        file.write_le_u64(self.o_last_record)?;
 
-        // Ok(())
+        Ok(())
     }
 
     fn read(_: &mut File) -> io::Result<Self> {

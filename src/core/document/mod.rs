@@ -55,12 +55,18 @@ impl PitakaDocument {
         read_document(file)
     }
 
+    pub fn get_all_accts(&mut self) -> io::Result<Vec<Account>> {
+        self.accounts.get_all(&mut self.file)
+    }
+
     pub fn get_all_trans(&mut self) -> io::Result<Vec<Transaction>> {
         self.transactions.get_all(&mut self.file)
     }
 
     pub fn save(&mut self) -> io::Result<()> {
-        self.transactions.write(&mut self.file, &mut self.cursor)
+        self.accounts.write(&mut self.file, &mut self.cursor)?;
+        self.transactions.write(&mut self.file, &mut self.cursor)?;
+        Ok(())
     }
 }
 
