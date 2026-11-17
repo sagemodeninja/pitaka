@@ -10,8 +10,19 @@ For records with relationships such as `Accounts` and `Transactions`, an "index"
 
 ## Notes
 
-<a id="length-prefixed-string"></a>
+<a id="11-17-2026"></a>
+<details>
+<summary><strong>Nov. 17, 2026</strong></summary>
+<br>
 
+| Time | Logs |
+| -- | -- |
+|11:00AM+08:00|Implemented the query builder. It makes querying "lazily" evaluate things like `skip`, `take`. It works by storing a plan that get's consumed when `collect` is called.<br><br>Next thing I am planning to make is the `reverse`. For the `get_all` query, this can be a simple start at last offset and traverse via prev. offset. For `get_by_offset`, I can probably reverse the iterator. But that's additional work? or since it's an iterator it doesn't matter?|
+|11:59AM+08:00|I need a way to make `for_append` participate on the query. Right now, it appends itself on every result inc. in the `by_offset` query. It doesn't also obey the `reverse` order. If we make the `index` also contains pending items, we'll need some sort of marker on whether the record is on disk of memory.<br><br>On the same token, edited records would also need to participate, that is load the edited records instead of the one on the disk.|
+
+</details>
+
+<a id="11-16-2026"></a>
 <details>
 <summary><strong>Nov. 16, 2026</strong></summary>
 <br>

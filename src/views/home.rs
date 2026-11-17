@@ -1,12 +1,13 @@
 use gpui_kit::assets::IconName;
-use gpui_kit::component::Icon;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::empty::{
     Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyMediaVariant, EmptyTitle,
 };
 use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::native_menu::NativeMenu;
+use gpui_kit::component::{Icon, TitleBar};
 use gpui_kit::{
-    App, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
+    App, Context, Div, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
 };
 
@@ -33,7 +34,24 @@ impl Render for PitakaView {
             render_welcome(_cx)
         };
 
-        div().size_full().child(content)
+        div()
+            .size_full()
+            .child(
+                TitleBar::new().child("Pitaka").child(
+                    div()
+                        .on_mouse_down(MouseButton::Left, |event, window, cx| {
+                            cx.stop_propagation();
+
+                            NativeMenu::new()
+                                .menu("Open Document…", Box::new(OpenFile))
+                                .separator()
+                                .menu("New Document…", Box::new(NewFile))
+                                .show(event.position, window, cx);
+                        })
+                        .child("Opt"),
+                ),
+            )
+            .child(content)
     }
 }
 

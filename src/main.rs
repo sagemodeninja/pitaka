@@ -6,9 +6,9 @@ mod views;
 use std::borrow::Cow;
 
 use gpui_kit::base::input::MaskPattern;
-use gpui_kit::component::Theme;
 use gpui_kit::component::input::InputState;
-use gpui_kit::{App, AppContext, Entity, WindowOptions, assets};
+use gpui_kit::component::{Theme, TitleBar};
+use gpui_kit::{App, AppContext, Entity, assets};
 
 use crate::utils::actions::AppActions;
 use crate::utils::keybinding::AppKeyBindings;
@@ -52,7 +52,15 @@ fn main() {
 }
 
 fn go_home(app: &mut App, state: &Entity<PitakaState>) {
-    gpui_kit::open_window(WindowOptions::default(), app, |window, cx| {
+    gpui_kit::open_window(TitleBar::window_options(), app, |window, cx| {
+        Theme::sync_system_appearance(Some(window), cx);
+
+        window
+            .observe_window_appearance(|window, cx| {
+                Theme::sync_system_appearance(Some(window), cx);
+            })
+            .detach();
+
         cx.new(|cx| PitakaView {
             state: state.clone(),
             selected_acct_id: 0,

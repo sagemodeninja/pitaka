@@ -2,12 +2,17 @@ use std::io;
 
 pub struct CollectionQueryPlan {
     pub skip: u32,
-    pub take: u32,
+    pub take: Option<u32>,
+    pub is_reversed: bool,
 }
 
 impl CollectionQueryPlan {
     pub fn new() -> Self {
-        Self { skip: 0, take: 0 }
+        Self {
+            skip: 0,
+            take: None,
+            is_reversed: false,
+        }
     }
 }
 
@@ -30,7 +35,12 @@ impl<'a, T> CollectionQueryBuilder<'a, T> {
     }
 
     pub fn take(mut self, n: u32) -> Self {
-        self.plan.take = n;
+        self.plan.take = Some(n);
+        self
+    }
+
+    pub fn reverse(mut self) -> Self {
+        self.plan.is_reversed = true;
         self
     }
 

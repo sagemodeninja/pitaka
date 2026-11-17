@@ -43,6 +43,7 @@ impl PitakaDocument {
         let transactions = Collection::create(2, &mut file)?;
 
         let cursor = file.stream_position()?;
+        file.move_to(0)?;
 
         Ok(PitakaDocument {
             file,
@@ -66,6 +67,7 @@ impl PitakaDocument {
         if let Some(offsets) = self.acct_trans.get(&id) {
             self.transactions
                 .get_by_offsets(offsets, &mut self.file)
+                .reverse()
                 .collect()
         } else {
             Ok(Vec::new())
