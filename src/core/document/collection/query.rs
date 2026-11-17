@@ -1,9 +1,17 @@
-use std::io;
+use std::{collections::HashMap, io};
+
+use crate::core::document::collection::index::IndexValue;
 
 pub struct CollectionQueryPlan {
     pub skip: u32,
     pub take: Option<u32>,
     pub is_reversed: bool,
+    pub indexed_filters: HashMap<String, IndexValue>,
+}
+
+pub struct CollectionQueryBuilder<'a, T> {
+    plan: CollectionQueryPlan,
+    collector: Box<dyn FnOnce(CollectionQueryPlan) -> io::Result<Vec<T>> + 'a>,
 }
 
 impl CollectionQueryPlan {
@@ -12,13 +20,9 @@ impl CollectionQueryPlan {
             skip: 0,
             take: None,
             is_reversed: false,
+            indexed_filters: HashMap::new(),
         }
     }
-}
-
-pub struct CollectionQueryBuilder<'a, T> {
-    plan: CollectionQueryPlan,
-    collector: Box<dyn FnOnce(CollectionQueryPlan) -> io::Result<Vec<T>> + 'a>,
 }
 
 impl<'a, T> CollectionQueryBuilder<'a, T> {
@@ -27,6 +31,11 @@ impl<'a, T> CollectionQueryBuilder<'a, T> {
             collector: Box::new(exec),
             plan: CollectionQueryPlan::new(),
         }
+    }
+
+    pub fn filter_indexed(mut self, index: &str, value: IndexValue) -> Self {
+        self.plan.indexed_filters.insert(index.into(), value);
+        self
     }
 
     pub fn skip(mut self, n: u32) -> Self {

@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::Result;
 
-use crate::core::document::collection::FileHandle;
+use crate::core::document::collection::RecordHandle;
 use crate::core::types::Money;
 use crate::utils::extensions::file::FileReadExtensions;
 use crate::utils::extensions::file::FileWriteExtensions;
@@ -20,13 +20,13 @@ pub struct Transaction {
     pub amount: Money,
 }
 
-impl FileHandle for Transaction {
+impl RecordHandle for Transaction {
     fn len(&self) -> u32 {
         let d_len = self.description.len_u32();
         ID_SIZE + ACCT_ID_SIZE + DESC_LENGTH_SIZE + d_len + AMOUNT_SIZE
     }
 
-    fn write(&mut self, file: &mut File, _: &mut u64) -> Result<()> {
+    fn write(&mut self, file: &mut File) -> Result<()> {
         file.write_le_u64(self.id)?;
         file.write_le_u16(self.account_id)?;
         file.write_len_pre_str(&self.description)?;

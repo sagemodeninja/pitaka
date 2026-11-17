@@ -5,10 +5,10 @@ use gpui_kit::component::empty::{
 };
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::native_menu::NativeMenu;
-use gpui_kit::component::{Icon, TitleBar};
+use gpui_kit::component::{ActiveTheme, Icon, TitleBar};
 use gpui_kit::{
     App, Context, Div, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use crate::components::LaunchAction;
@@ -165,15 +165,16 @@ fn render_accts(view: &PitakaView, cx: &mut Context<PitakaView>) -> Div {
             column()
                 .child(row().gap_1().child("Name"))
                 .children(records.into_iter().map(|acct| {
-                    let highlight = if acct.id == view.selected_acct_id {
-                        rgb(0xff0000)
+                    let (background, foreground) = if acct.id == view.selected_acct_id {
+                        (cx.theme().accent, cx.theme().accent_foreground)
                     } else {
-                        rgb(0xffffff)
+                        (cx.theme().background, cx.theme().foreground)
                     };
 
                     row()
                         .id(format!("acct_row_{}", acct.id))
-                        .bg(highlight)
+                        .bg(background)
+                        .text_color(foreground)
                         .gap_1()
                         .child(acct.display_name)
                         .on_click(cx.listener(move |this, _, _, cx| {

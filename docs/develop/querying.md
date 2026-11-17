@@ -8,6 +8,17 @@
 
 For records with relationships such as `Accounts` and `Transactions`, an "index" is constructed on read. This index is a simple hash map of the parent ID and child IDs (`HashMap<u16, Vec<u64>`). The "indexer" simply traverses the records, and populates child IDs with the parent ID as key.
 
+## Planned: Multiple Filters
+
+Combining multiple indexed filters is future work. The current query implementation selects one indexed filter; it does not yet evaluate all conditions.
+
+- **AND — intersection:** Keep only record offsets present in every filter's result. For example, `[112, 160, 208]` intersected with `[160, 208, 300]` gives `[160, 208]`.
+- **OR — union:** Combine the filters' record offsets and remove duplicates. The same lists give `[112, 160, 208, 300]`.
+
+For AND queries, an alternative to intersecting indexes is to use one index to find candidate records, then read those records and evaluate every remaining condition. Prefer the index with the fewest candidates when that information is available.
+
+Define result ordering before applying `reverse`, `skip`, and `take`; combining filters must happen before pagination. Union results must include each matching record only once.
+
 ## Notes
 
 <a id="11-17-2026"></a>
@@ -19,6 +30,7 @@ For records with relationships such as `Accounts` and `Transactions`, an "index"
 | -- | -- |
 |11:00AM+08:00|Implemented the query builder. It makes querying "lazily" evaluate things like `skip`, `take`. It works by storing a plan that get's consumed when `collect` is called.<br><br>Next thing I am planning to make is the `reverse`. For the `get_all` query, this can be a simple start at last offset and traverse via prev. offset. For `get_by_offset`, I can probably reverse the iterator. But that's additional work? or since it's an iterator it doesn't matter?|
 |11:59AM+08:00|I need a way to make `for_append` participate on the query. Right now, it appends itself on every result inc. in the `by_offset` query. It doesn't also obey the `reverse` order. If we make the `index` also contains pending items, we'll need some sort of marker on whether the record is on disk of memory.<br><br>On the same token, edited records would also need to participate, that is load the edited records instead of the one on the disk.|
+|02:33AM+08:00||
 
 </details>
 
