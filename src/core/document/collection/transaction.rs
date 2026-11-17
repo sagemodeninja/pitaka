@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Result;
 
 use crate::core::document::collection::FileHandle;
+use crate::core::types::Money;
 use crate::utils::extensions::file::FileReadExtensions;
 use crate::utils::extensions::file::FileWriteExtensions;
 use crate::utils::extensions::string::StringExtensions;
@@ -16,7 +17,7 @@ pub struct Transaction {
     pub id: u64,
     pub account_id: u16,
     pub description: String,
-    pub amount_centavos: i64,
+    pub amount: Money,
 }
 
 impl FileHandle for Transaction {
@@ -29,7 +30,7 @@ impl FileHandle for Transaction {
         file.write_le_u64(self.id)?;
         file.write_le_u16(self.account_id)?;
         file.write_len_pre_str(&self.description)?;
-        file.write_le_i64(self.amount_centavos)
+        file.write_money(&self.amount)
     }
 
     fn read(file: &mut File) -> Result<Self> {
@@ -37,7 +38,7 @@ impl FileHandle for Transaction {
             id: file.read_le_u64()?,
             account_id: file.read_le_u16()?,
             description: file.read_len_pre_str()?,
-            amount_centavos: file.read_le_i64()?,
+            amount: file.read_money()?,
         })
     }
 }

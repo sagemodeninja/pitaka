@@ -8,7 +8,14 @@
 
 For records with relationships such as `Accounts` and `Transactions`, an "index" is constructed on read. This index is a simple hash map of the parent ID and child IDs `HashMap<u16, Vec<u64>`. The "indexer" simply traverses the records, and populating the child IDs via the parent ID as key.
 
-### Nov. 16, 2026
+## Notes
+
+<a id="length-prefixed-string"></a>
+
+<details>
+<summary><strong>Nov. 16, 2026</strong></summary>
+<br>
+
 Currently, the app loads **all** records for a collection. Which has some issues:
 
 1. As the records grow, it will cause peformance issues.
@@ -21,3 +28,4 @@ Relationship will probably work in a similar manner. That is look at a record, c
 I am also thinking of some sort of indexing. Probably store ranges of address `from` and `to` which says: "If you traverse here, you'd get records related to this FK or something. If my records or FKs will stay near each other this is probably an efficient way of doing this.
 
 9:31 PM will do a research on indexing.
+</details>

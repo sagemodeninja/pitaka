@@ -1,6 +1,8 @@
 use std::fs::File;
 use std::io::{self, Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 
+use crate::core::types::Money;
+
 pub trait FileCursorExtensions {
     fn move_to(&mut self, pos: u64) -> Result<u64>;
     fn move_for(&mut self, steps: i64) -> Result<u64>;
@@ -17,6 +19,7 @@ pub trait FileReadExtensions {
     fn read_le_u64(&mut self) -> Result<u64>;
 
     fn read_len_pre_str(&mut self) -> Result<String>;
+    fn read_money(&mut self) -> Result<Money>;
 }
 
 pub trait FileWriteExtensions {
@@ -28,6 +31,7 @@ pub trait FileWriteExtensions {
     fn write_le_u64(&mut self, value: u64) -> Result<()>;
 
     fn write_len_pre_str(&mut self, value: &String) -> Result<()>;
+    fn write_money(&mut self, value: &Money) -> Result<()>;
 }
 
 impl FileCursorExtensions for File {
@@ -82,7 +86,7 @@ impl FileReadExtensions for File {
         Ok(u64::from_le_bytes(buf))
     }
 
-    // String...
+    // Others...
     fn read_len_pre_str(&mut self) -> Result<String> {
         let len = self.read_le_u32()? as usize;
 
@@ -90,6 +94,11 @@ impl FileReadExtensions for File {
         self.read_exact(&mut str_buf)?;
 
         String::from_utf8(str_buf).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+    }
+
+    fn read_money(&mut self) -> Result<Money> {
+        let minor_units = self.read_le_i64()?;
+        Ok(Money::from_minor_units(minor_units))
     }
 }
 
@@ -127,5 +136,10 @@ impl FileWriteExtensions for File {
         self.write_all(&bytes)?;
 
         Ok(())
+    }
+
+    fn write_money(&mut self, value: &Money) -> Result<()> {
+        let minor_units = value.minor_units();
+        self.write_le_i64(minor_units)
     }
 }

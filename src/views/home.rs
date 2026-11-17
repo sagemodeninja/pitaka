@@ -14,6 +14,7 @@ use crate::components::LaunchAction;
 use crate::components::{column, row};
 use crate::core::document::collection::{Account, Transaction};
 use crate::core::state::PitakaState;
+use crate::core::types::Money;
 use crate::utils::actions::{NewFile, OpenFile};
 
 pub struct PitakaView {
@@ -117,14 +118,14 @@ fn render_main(view: &mut PitakaView, cx: &mut Context<PitakaView>) -> Div {
                             this.state.update(cx, |state, cx| {
                                 if let Some(doc) = &mut state.document {
                                     let desc = this.trans_desc_ipt.read(cx).value();
-                                    let amnt = this.trans_amnt_ipt.read(cx).value();
+                                    let s_amnt = this.trans_amnt_ipt.read(cx).value();
 
-                                    if let Some(amnt) = amnt_str_to_centavos(amnt.into()) {
+                                    if let Ok(amount) = s_amnt.parse::<Money>() {
                                         doc.transactions.add(|id| Transaction {
                                             id,
                                             account_id: this.selected_acct_id,
                                             description: desc.into(),
-                                            amount_centavos: amnt,
+                                            amount,
                                         });
                                         cx.notify();
                                     }
@@ -183,41 +184,9 @@ fn render_trans(view: &PitakaView, cx: &mut App) -> Div {
                 row()
                     .gap_1()
                     .child(trans.description.clone())
-                    .child(format_centavos(&trans.amount_centavos))
+                    .child(trans.amount.to_string())
             })),
         Some(Err(err)) => div().child(format!("Something went wrong: {err}")),
         None => div().child("Please create/open a file first..."),
     }
-}
-
-fn format_centavos(amount: &i64) -> String {
-    let sign = if *amount < 0 { "-" } else { "" };
-    let magnitude = amount.unsigned_abs();
-
-    let pesos = magnitude / 100;
-    let centavos = magnitude % 100;
-
-    format!("{sign}₱{pesos}.{centavos:02}")
-}
-
-fn amnt_str_to_centavos(amount: String) -> Option<i64> {
-    let amount = amount.trim().replace(',', "");
-
-    if !amount.is_empty() {
-        let parts: Vec<&str> = amount.split('.').collect();
-
-        if let Ok(whole) = parts[0].parse::<i64>() {
-            let centavos = if parts.len() > 1 {
-                format!("{:0<2}", parts[1]).parse::<i64>()
-            } else {
-                Ok(0)
-            };
-
-            if let Ok(centavos) = centavos {
-                return Some(whole * 100 + centavos);
-            }
-        }
-    }
-
-    None
 }
