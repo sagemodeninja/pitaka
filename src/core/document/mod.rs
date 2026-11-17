@@ -64,7 +64,9 @@ impl PitakaDocument {
 
     pub fn get_acct_trans(&mut self, id: u16) -> io::Result<Vec<Transaction>> {
         if let Some(offsets) = self.acct_trans.get(&id) {
-            self.transactions.get_by_offsets(offsets, &mut self.file)
+            self.transactions
+                .get_by_offsets(offsets, &mut self.file)
+                .collect()
         } else {
             Ok(Vec::new())
         }

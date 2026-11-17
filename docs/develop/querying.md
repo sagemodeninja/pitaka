@@ -6,7 +6,7 @@
 
 ## Relationships
 
-For records with relationships such as `Accounts` and `Transactions`, an "index" is constructed on read. This index is a simple hash map of the parent ID and child IDs `HashMap<u16, Vec<u64>`. The "indexer" simply traverses the records, and populating the child IDs via the parent ID as key.
+For records with relationships such as `Accounts` and `Transactions`, an "index" is constructed on read. This index is a simple hash map of the parent ID and child IDs (`HashMap<u16, Vec<u64>`). The "indexer" simply traverses the records, and populates child IDs with the parent ID as key.
 
 ## Notes
 
