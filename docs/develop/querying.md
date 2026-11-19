@@ -1,25 +1,40 @@
-[Pitaka](../../README.md) <span style="color: #888;">/</span> [Development](README.md) <span style="color: #888;">/</span> File Layout
-
-> This will serve as both official documentation and devlogs for my thoughts on how to implement the querying system.
+[Pitaka](../../README.md) <span style="color: #888;">/</span> [Development](README.md) <span style="color: #888;">/</span> Querying
 
 # Querying
 
-## Relationships
+## Collection indexes
 
-For records with relationships such as `Accounts` and `Transactions`, an "index" is constructed on read. This index is a simple hash map of the parent ID and child IDs (`HashMap<u16, Vec<u64>`). The "indexer" simply traverses the records, and populates child IDs with the parent ID as key.
+Each collection can register named equality indexes with `Collection::index(name, evaluator)`. The evaluator extracts an `IndexValue` from a record payload. Currently the only supported value is `IndexValue::U16`, and a `u16` can be converted with `.into()`.
 
-## Planned: Multiple Filters
+When a document is opened, `Collection::read` builds the indexes in memory. The builder follows the collection's on-disk record links from first to last, reads each payload, and runs the registered evaluators. Each named index is a `HashMap<IndexValue, Vec<u64>>`. Each vector holds absolute file offsets of record headers in collection order. The [file format](file_layout.md) stores the records and their links. Indexes are rebuilt from those records when the document is reopened.
 
-Combining multiple indexed filters is future work. The current query implementation selects one indexed filter; it does not yet evaluate all conditions.
+The document registers one index, `acct_id`, on the transaction collection. Its evaluator uses `Transaction::account_id`, so a lookup by account ID returns offsets of transactions belonging to that account. The relationship is represented by the account ID stored in the transaction payload. Looking it up requires only the transaction index.
 
-- **AND — intersection:** Keep only record offsets present in every filter's result. For example, `[112, 160, 208]` intersected with `[160, 208, 300]` gives `[160, 208]`.
-- **OR — union:** Combine the filters' record offsets and remove duplicates. The same lists give `[112, 160, 208, 300]`.
+## Querying by index
 
-For AND queries, an alternative to intersecting indexes is to use one index to find candidate records, then read those records and evaluate every remaining condition. Prefer the index with the fewest candidates when that information is available.
+`Collection::query` builds a plan and defers payload reads until `collect()`. For example, inside the document implementation, this retrieves the second page of transactions for an account in reverse collection order:
 
-Define result ordering before applying `reverse`, `skip`, and `take`; combining filters must happen before pagination. Union results must include each matching record only once.
+```rust
+self.transactions
+    .query(&mut self.file)
+    .filter_indexed("acct_id", id.into())
+    .reverse()
+    .skip(20)
+    .take(20)
+    .collect()
+```
 
-## Notes
+`PitakaDocument::get_acct_trans(id)` uses the same filter and reverse order and returns all matching transactions. The default order is first to last in the collection. The query reverses the matching offsets if requested, applies `skip` and `take`, then reads only the selected payloads. The defaults are zero skipped records and no limit.
+
+Use one indexed filter per query. If a query has no filter, the index is unavailable, or the selected value has no matches, it returns an empty vector. Use `Collection::get_all` for a full collection read. Adding a second filter with the same name replaces the first value. With multiple names, the collector uses the first available index it encounters in a hash map, whose iteration order is unspecified.
+
+The index reflects the persisted records scanned at open time. Pending appends are excluded, and saving leaves the in-memory index as it was. Reopen the document after saving to include new transactions in indexed results. A document returned by `PitakaDocument::create` gets its transaction index on the first reopen.
+
+## Planned: Multiple filters
+
+AND queries could intersect candidate offsets or use one index to find candidates and check the remaining conditions against their payloads. OR queries could union candidate offsets and deduplicate them. Both would determine result order before applying pagination.
+
+## Development notes
 
 <a id="11-17-2026"></a>
 <details>
@@ -30,7 +45,6 @@ Define result ordering before applying `reverse`, `skip`, and `take`; combining 
 | -- | -- |
 |11:00AM+08:00|Implemented the query builder. It makes querying "lazily" evaluate things like `skip`, `take`. It works by storing a plan that get's consumed when `collect` is called.<br><br>Next thing I am planning to make is the `reverse`. For the `get_all` query, this can be a simple start at last offset and traverse via prev. offset. For `get_by_offset`, I can probably reverse the iterator. But that's additional work? or since it's an iterator it doesn't matter?|
 |11:59AM+08:00|I need a way to make `for_append` participate on the query. Right now, it appends itself on every result inc. in the `by_offset` query. It doesn't also obey the `reverse` order. If we make the `index` also contains pending items, we'll need some sort of marker on whether the record is on disk of memory.<br><br>On the same token, edited records would also need to participate, that is load the edited records instead of the one on the disk.|
-|02:33AM+08:00||
 
 </details>
 

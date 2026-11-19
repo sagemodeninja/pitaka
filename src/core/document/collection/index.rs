@@ -1,8 +1,11 @@
 use std::{collections::HashMap, fs::File, io};
 
 use crate::{
-    core::document::collection::RecordHandle,
-    utils::extensions::file::{FileCursorExtensions, FileReadExtensions},
+    core::document::{
+        collection::{RecordPayload, record::Record},
+        file::FileHandle,
+    },
+    utils::extensions::file::FileCursorExtensions,
 };
 
 type Index = HashMap<IndexValue, Vec<u64>>;
@@ -18,12 +21,12 @@ impl Into<IndexValue> for u16 {
     }
 }
 
-pub struct CollectionIndexBuilder<T: RecordHandle> {
+pub struct CollectionIndexBuilder<T: RecordPayload> {
     evaluators: HashMap<String, Box<dyn Fn(&T) -> IndexValue>>,
     pub indexes: HashMap<String, Index>,
 }
 
-impl<T: RecordHandle> CollectionIndexBuilder<T> {
+impl<T: RecordPayload> CollectionIndexBuilder<T> {
     pub fn new() -> Self {
         Self {
             indexes: HashMap::new(),
@@ -36,28 +39,24 @@ impl<T: RecordHandle> CollectionIndexBuilder<T> {
         self
     }
 
-    pub fn build(&mut self, head: u64, file: &mut File) -> io::Result<()> {
-        file.move_to(head + 17)?;
-
-        let count = file.read_le_u64()?;
-        let mut o_r_curr = file.read_le_u64()?;
+    pub fn build(&mut self, count: u64, start: u64, file: &mut File) -> io::Result<()> {
+        let mut o_r_next = start;
 
         for _ in 0..count {
-            file.move_to(o_r_curr + 8)?;
-            let o_r_next = file.read_le_u64()?;
+            file.move_to(o_r_next)?;
+            let record = Record::<T>::read_from_file(file)?;
 
-            let item = T::read(file)?;
             for (key, eval) in &self.evaluators {
-                let value = eval(&item);
+                let value = eval(&record.item);
                 self.indexes
                     .entry(key.clone())
                     .or_default()
                     .entry(value)
                     .or_default()
-                    .push(o_r_curr);
+                    .push(o_r_next);
             }
 
-            o_r_curr = o_r_next;
+            o_r_next = record.o_next;
         }
 
         Ok(())

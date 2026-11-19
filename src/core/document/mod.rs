@@ -1,4 +1,5 @@
 pub mod collection;
+pub mod file;
 
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -6,6 +7,7 @@ use std::io::{Error, ErrorKind, Seek, Write};
 use std::path::PathBuf;
 
 use crate::core::document::collection::{Account, Collection, Transaction};
+use crate::core::document::file::FileHandle;
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
 };
@@ -19,7 +21,6 @@ const MINIMUM_FILE_SIZE: u64 = HEADER_SIZE + COLLECTION_SIZE;
 
 pub struct PitakaDocument {
     file: File,
-    cursor: u64,
 
     pub accounts: Collection<Account>,
     pub transactions: Collection<Transaction>,
@@ -37,15 +38,13 @@ impl PitakaDocument {
         file.write_zeros(10)?; // Reserved...
 
         // Collections...
-        let accounts = Collection::create(1, &mut file)?;
-        let transactions = Collection::create(2, &mut file)?;
+        let accounts = Collection::create(&mut file)?;
+        let transactions = Collection::create(&mut file)?;
 
-        let cursor = file.stream_position()?;
         file.move_to(0)?;
 
         Ok(PitakaDocument {
             file,
-            cursor,
             accounts,
             transactions,
         })
@@ -70,8 +69,8 @@ impl PitakaDocument {
     }
 
     pub fn save(&mut self) -> io::Result<()> {
-        self.accounts.write(&mut self.file, &mut self.cursor)?;
-        self.transactions.write(&mut self.file, &mut self.cursor)?;
+        self.accounts.write_to_file(&mut self.file)?;
+        self.transactions.write_to_file(&mut self.file)?;
         Ok(())
     }
 }
@@ -87,12 +86,10 @@ fn open_file(path: &PathBuf, truncate: bool) -> io::Result<File> {
 
 // SEE: /docs/develop/file_layout.md
 fn read_document(mut file: File) -> io::Result<PitakaDocument> {
-    let file_len = file.metadata()?.len();
-
     // Header...
     file.move_to(0)?;
 
-    if file_len < MINIMUM_FILE_SIZE {
+    if file.metadata()?.len() < MINIMUM_FILE_SIZE {
         return Err(Error::new(
             ErrorKind::InvalidData,
             format!("Document is too short: expected at least {MINIMUM_FILE_SIZE} bytes."),
@@ -119,8 +116,8 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
     file.move_for(10)?; // Reserved.
 
     // Collection discovery...
-    let mut accounts = Collection::<Account>::empty(0);
-    let mut transactions = Collection::<Transaction>::empty(0);
+    let mut accounts = Collection::<Account>::empty();
+    let mut transactions = Collection::<Transaction>::empty();
 
     transactions.index("acct_id", |trans| trans.account_id.into());
 
@@ -147,11 +144,13 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
         }
     }
 
+    accounts.build_index(&mut file)?;
+    transactions.build_index(&mut file)?;
+
     file.move_to(0)?;
 
     Ok(PitakaDocument {
         file,
-        cursor: file_len,
         accounts,
         transactions,
     })
