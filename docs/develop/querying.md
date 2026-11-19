@@ -2,6 +2,15 @@
 
 # Querying
 
+This acts as both official documentation and devlogs.
+
+## Contents
+
+- [Collection indexes](#collection-indexes)
+- [Querying by index](#querying-by-index)
+- [Planned multiple filters](#planned-multiple-filters)
+- [Devlogs](#devlogs)
+
 ## Collection indexes
 
 Each collection can register named equality indexes with `Collection::index(name, evaluator)`. The evaluator extracts an `IndexValue` from a record payload. Currently the only supported value is `IndexValue::U16`, and a `u16` can be converted with `.into()`.
@@ -34,7 +43,20 @@ The index reflects the persisted records scanned at open time. Pending appends a
 
 AND queries could intersect candidate offsets or use one index to find candidates and check the remaining conditions against their payloads. OR queries could union candidate offsets and deduplicate them. Both would determine result order before applying pagination.
 
-## Development notes
+## Devlogs
+
+<details>
+<summary><strong>Nov. 19, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 12:56 PM +08:00 | Considered narrowing a vector of all IDs with `retain`. For a single indexed filter, the index bucket already supplies the candidate record IDs. With no filters, use sorted directory keys. Apply pagination before resolving the selected IDs through the directory. Keep candidate IDs in scope through iteration and seek to the offset from `OnDisk`. Confirmed the query works after returning the candidate vector from the filter branch. |
+| 12:43 PM +08:00 | Record deltas now carry the record ID in each enum variant. Discussed using `filter_map` to collect IDs from `RecordDelta::Create` for the append path. |
+| 12:08 PM +08:00 | The collection now maps record IDs to disk offsets. Proposed resolving each ID to either a disk offset or a record in `tracked_records`, and storing IDs in field indexes so queries can also resolve pending records. Edits that change an indexed value need to move the ID between index buckets. |
+| 11:52 AM +08:00 | Discussed starting with an in-memory `HashMap<u64, u64>` from record ID to file offset. The proposed `build_indexes` method would populate it in the same scan as the field indexes. Revisit the design if measurements show that opening large files or holding the map in memory is costly. |
+
+</details>
 
 <a id="11-17-2026"></a>
 <details>
@@ -43,8 +65,8 @@ AND queries could intersect candidate offsets or use one index to find candidate
 
 | Time | Logs |
 | -- | -- |
-|11:00AM+08:00|Implemented the query builder. It makes querying "lazily" evaluate things like `skip`, `take`. It works by storing a plan that get's consumed when `collect` is called.<br><br>Next thing I am planning to make is the `reverse`. For the `get_all` query, this can be a simple start at last offset and traverse via prev. offset. For `get_by_offset`, I can probably reverse the iterator. But that's additional work? or since it's an iterator it doesn't matter?|
 |11:59AM+08:00|I need a way to make `for_append` participate on the query. Right now, it appends itself on every result inc. in the `by_offset` query. It doesn't also obey the `reverse` order. If we make the `index` also contains pending items, we'll need some sort of marker on whether the record is on disk of memory.<br><br>On the same token, edited records would also need to participate, that is load the edited records instead of the one on the disk.|
+|11:00AM+08:00|Implemented the query builder. It makes querying "lazily" evaluate things like `skip`, `take`. It works by storing a plan that get's consumed when `collect` is called.<br><br>Next thing I am planning to make is the `reverse`. For the `get_all` query, this can be a simple start at last offset and traverse via prev. offset. For `get_by_offset`, I can probably reverse the iterator. But that's additional work? or since it's an iterator it doesn't matter?|
 
 </details>
 

@@ -55,7 +55,7 @@ impl PitakaDocument {
     }
 
     pub fn get_all_accts(&mut self) -> io::Result<Vec<Record<Account>>> {
-        self.accounts.get_all(&mut self.file)
+        self.accounts.query(&mut self.file).collect()
     }
 
     pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<Record<Transaction>>> {
@@ -117,7 +117,7 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
     let mut accounts = Collection::<Account>::empty();
     let mut transactions = Collection::<Transaction>::empty();
 
-    transactions.index("acct_id", |trans| trans.account_id.into());
+    transactions.add_index("acct_id", |trans| trans.account_id.into());
 
     loop {
         let o_c_curr = file.stream_position()?;
@@ -144,8 +144,8 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
         }
     }
 
-    accounts.build_index(&mut file)?;
-    transactions.build_index(&mut file)?;
+    accounts.build_indexes(&mut file)?;
+    transactions.build_indexes(&mut file)?;
 
     file.move_to(0)?;
 

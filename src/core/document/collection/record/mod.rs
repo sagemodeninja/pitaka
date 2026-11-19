@@ -1,4 +1,5 @@
 pub mod delta;
+pub mod location;
 
 use std::fs::File;
 use std::io;
@@ -12,6 +13,7 @@ use crate::utils::{
 
 const HEADER_SIZE: u32 = 40;
 
+#[derive(Clone)]
 pub struct Record<T: RecordPayload> {
     pub o_prev: u64,
     pub o_next: u64,

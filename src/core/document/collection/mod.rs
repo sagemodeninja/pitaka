@@ -13,8 +13,9 @@ use std::fs::File;
 use std::io::{self, Seek};
 use std::os::unix::fs::MetadataExt;
 
-use crate::core::document::collection::delta::{RecordDelta, RecordDeltaType};
+use crate::core::document::collection::delta::RecordDelta;
 use crate::core::document::collection::index::{CollectionIndexBuilder, IndexValue};
+use crate::core::document::collection::location::RecordLocation::{self, InMemory, OnDisk};
 use crate::core::document::collection::query::CollectionQueryBuilder;
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
@@ -35,9 +36,10 @@ pub struct Collection<T: RecordPayload> {
     pub o_first_record: u64,
     pub o_last_record: u64,
 
+    directory: HashMap<u64, RecordLocation>,
     indexes: CollectionIndexBuilder<T>,
     updates: Vec<RecordDelta>,
-    tracked_records: HashMap<u64, Record<T>>,
+    tracked: HashMap<u64, Record<T>>,
 }
 
 impl<T: RecordPayload> Collection<T> {
@@ -52,9 +54,10 @@ impl<T: RecordPayload> Collection<T> {
             o_first_record: 0,
             o_last_record: 0,
 
+            directory: HashMap::new(),
             indexes: CollectionIndexBuilder::new(),
             updates: Vec::new(),
-            tracked_records: HashMap::new(),
+            tracked: HashMap::new(),
         }
     }
 
@@ -88,76 +91,58 @@ impl<T: RecordPayload> Collection<T> {
         Ok(())
     }
 
-    pub fn index<'a>(
+    pub fn add_index<'a>(
         &mut self,
         key: &str,
         eval: impl Fn(&T) -> IndexValue + 'static,
     ) -> &mut CollectionIndexBuilder<T> {
-        self.indexes.index(key, eval)
+        self.indexes.add_index(key, eval)
     }
 
-    pub fn build_index(&mut self, file: &mut File) -> io::Result<()> {
-        self.indexes
-            .build(self.record_count, self.o_first_record, file)
-    }
+    pub fn build_indexes(&mut self, file: &mut File) -> io::Result<()> {
+        let mut o_r_next = self.o_first_record;
 
-    pub fn get_all(&self, file: &mut File) -> io::Result<Vec<Record<T>>>
-    where
-        T: Clone,
-    {
-        let mut records = Vec::new();
-
-        let mut cursor = self.o_first_record;
         for _ in 0..self.record_count {
-            file.move_to(cursor)?;
+            file.move_to(o_r_next)?;
 
             let record = Record::<T>::read_from_file(file)?;
-            cursor = record.o_next;
+            self.directory.insert(record.id, OnDisk(o_r_next));
+            self.indexes.insert(&record);
 
-            records.push(record);
+            o_r_next = record.o_next;
         }
 
-        // for item in &self.for_append {
-        //     items.push(item.item.clone());
-        // }
-
-        Ok(records)
-    }
-
-    pub fn add(&mut self, item: T) {
-        let id = self.next_id;
-
-        let record = Record::new(self.o_last_record, id, item);
-        self.tracked_records.insert(id, record);
-
-        let delta = RecordDelta::create(id);
-        self.updates.push(delta);
-
-        self.next_id += 1;
+        Ok(())
     }
 
     pub fn query<'a>(&'a self, file: &'a mut File) -> CollectionQueryBuilder<'a, T>
     where
         T: Clone,
     {
-        // TODO: A way for for_append to participate on the query.
         CollectionQueryBuilder::new(|plan| {
             let mut records = Vec::new();
 
-            let mut offsets: Option<&Vec<u64>> = None;
-            for (key, value) in plan.indexed_filters {
-                if let Some(index) = self.indexes.get(&key) {
-                    offsets = index.get(&value);
-                    break;
+            let ids: Vec<u64> = if !plan.indexed_filters.is_empty() {
+                let mut ids = Vec::new();
+                for (key, value) in plan.indexed_filters {
+                    if let Some(index) = self.indexes.get(&key) {
+                        if let Some(y) = index.get(&value) {
+                            ids = y.clone();
+                        }
+                        break;
+                    }
                 }
-            }
-
-            let offsets: &[u64] = offsets.map(Vec::as_slice).unwrap_or(&[]);
+                ids
+            } else {
+                let mut ids: Vec<u64> = self.directory.keys().copied().collect();
+                ids.sort_unstable();
+                ids
+            };
 
             let iter: Box<dyn Iterator<Item = &u64> + '_> = if plan.is_reversed {
-                Box::new(offsets.iter().rev())
+                Box::new(ids.iter().rev())
             } else {
-                Box::new(offsets.iter())
+                Box::new(ids.iter())
             };
 
             let take = match plan.take {
@@ -165,17 +150,37 @@ impl<T: RecordPayload> Collection<T> {
                 None => usize::MAX,
             };
 
-            for &offset in iter.skip(plan.skip as usize).take(take) {
-                file.move_to(offset)?;
-                records.push(Record::<T>::read_from_file(file)?);
+            for &id in iter.skip(plan.skip as usize).take(take) {
+                if let Some(location) = self.directory.get(&id) {
+                    match location {
+                        OnDisk(offset) => {
+                            file.move_to(*offset)?;
+                            records.push(Record::<T>::read_from_file(file)?);
+                        }
+                        InMemory => {
+                            if let Some(item) = self.tracked.get(&id) {
+                                records.push(item.clone());
+                            }
+                        }
+                    }
+                }
             }
-
-            // for item in &self.for_append {
-            //     items.push(item.item.clone());
-            // }
 
             Ok(records)
         })
+    }
+
+    pub fn add(&mut self, item: T) {
+        let id = self.next_id;
+
+        let record = Record::new(self.o_last_record, id, item);
+
+        self.directory.insert(id, InMemory);
+        self.indexes.insert(&record);
+        self.updates.push(RecordDelta::Create(id));
+        self.tracked.insert(id, record);
+
+        self.next_id += 1;
     }
 }
 
@@ -185,10 +190,13 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
     }
 
     fn write_to_file(&mut self, file: &mut File) -> io::Result<()> {
-        let for_append: Vec<_> = self
+        let for_append: Vec<u64> = self
             .updates
             .iter()
-            .filter(|delta| matches!(delta.delta_type, RecordDeltaType::Create))
+            .filter_map(|delta| match delta {
+                RecordDelta::Create(id) => Some(*id),
+                _ => None,
+            })
             .collect();
 
         let append_len = for_append.len() as u64;
@@ -213,8 +221,8 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
                     self.o_last_record = o_next;
                 }
 
-                let delta = for_append[index as usize];
-                if let Some(record) = self.tracked_records.get_mut(&delta.record_id) {
+                let id = for_append[index as usize];
+                if let Some(record) = self.tracked.get_mut(&id) {
                     file.move_to(o_next)?;
 
                     record.o_prev = o_prev;
@@ -233,7 +241,7 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
         }
 
         self.updates.clear();
-        self.tracked_records.clear();
+        self.tracked.clear();
 
         // Update collection header...
         file.move_to(self.position)?;
