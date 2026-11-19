@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{self, Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 
-use crate::core::types::Money;
+use crate::utils::file::FileHandle;
 
 pub trait FileCursorExtensions {
     fn move_to(&mut self, pos: u64) -> Result<u64>;
@@ -9,6 +9,8 @@ pub trait FileCursorExtensions {
 }
 
 pub trait FileReadExtensions {
+    fn read<T: FileHandle>(&mut self) -> Result<T>;
+
     fn read_4_bytes(&mut self) -> Result<[u8; 4]>;
     fn read_8_bytes(&mut self) -> Result<[u8; 8]>;
 
@@ -19,10 +21,10 @@ pub trait FileReadExtensions {
     fn read_le_u64(&mut self) -> Result<u64>;
 
     fn read_len_pre_str(&mut self) -> Result<String>;
-    fn read_money(&mut self) -> Result<Money>;
 }
 
 pub trait FileWriteExtensions {
+    fn write(&mut self, data: &mut impl FileHandle) -> Result<()>;
     fn write_zeros(&mut self, len: usize) -> Result<()>;
 
     fn write_le_u8(&mut self, value: u8) -> Result<()>;
@@ -31,7 +33,6 @@ pub trait FileWriteExtensions {
     fn write_le_u64(&mut self, value: u64) -> Result<()>;
 
     fn write_len_pre_str(&mut self, value: &String) -> Result<()>;
-    fn write_money(&mut self, value: &Money) -> Result<()>;
 }
 
 impl FileCursorExtensions for File {
@@ -45,6 +46,10 @@ impl FileCursorExtensions for File {
 }
 
 impl FileReadExtensions for File {
+    fn read<T: FileHandle>(&mut self) -> Result<T> {
+        T::read_from_file(self)
+    }
+
     // Bytes...
     fn read_4_bytes(&mut self) -> Result<[u8; 4]> {
         let mut buf = [0u8; 4];
@@ -95,16 +100,15 @@ impl FileReadExtensions for File {
 
         String::from_utf8(str_buf).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
-
-    fn read_money(&mut self) -> Result<Money> {
-        let minor_units = self.read_le_i64()?;
-        Ok(Money::from_minor_units(minor_units))
-    }
 }
 
 impl FileWriteExtensions for File {
     fn write_zeros(&mut self, len: usize) -> Result<()> {
         self.write_all(&vec![0u8; len])
+    }
+
+    fn write(&mut self, data: &mut impl FileHandle) -> Result<()> {
+        data.write_to_file(self)
     }
 
     fn write_le_u8(&mut self, value: u8) -> Result<()> {
@@ -136,10 +140,5 @@ impl FileWriteExtensions for File {
         self.write_all(&bytes)?;
 
         Ok(())
-    }
-
-    fn write_money(&mut self, value: &Money) -> Result<()> {
-        let minor_units = value.minor_units();
-        self.write_le_i64(minor_units)
     }
 }

@@ -1,23 +1,20 @@
 use std::{collections::HashMap, fs::File, io};
 
 use crate::{
-    core::document::{
-        collection::{RecordPayload, record::Record},
-        file::FileHandle,
-    },
-    utils::extensions::file::FileCursorExtensions,
+    core::document::collection::{RecordPayload, record::Record},
+    utils::{extensions::file::FileCursorExtensions, file::FileHandle},
 };
 
 type Index = HashMap<IndexValue, Vec<u64>>;
 
 #[derive(PartialEq, Eq, Hash)]
 pub enum IndexValue {
-    U16(u16),
+    U64(u64),
 }
 
-impl Into<IndexValue> for u16 {
+impl Into<IndexValue> for u64 {
     fn into(self) -> IndexValue {
-        IndexValue::U16(self)
+        IndexValue::U64(self)
     }
 }
 

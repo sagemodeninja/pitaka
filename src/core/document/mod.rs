@@ -1,16 +1,15 @@
 pub mod collection;
-pub mod file;
 
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Error, ErrorKind, Seek, Write};
 use std::path::PathBuf;
 
-use crate::core::document::collection::{Account, Collection, Transaction};
-use crate::core::document::file::FileHandle;
+use crate::core::document::collection::{Account, Collection, Record, Transaction};
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
 };
+use crate::utils::file::FileHandle;
 
 const MAGIC_NUMBER: [u8; 4] = *b"PTKA";
 const CURRENT_FORMAT_VERSION: u16 = 1;
@@ -55,11 +54,11 @@ impl PitakaDocument {
         read_document(file)
     }
 
-    pub fn get_all_accts(&mut self) -> io::Result<Vec<Account>> {
+    pub fn get_all_accts(&mut self) -> io::Result<Vec<Record<Account>>> {
         self.accounts.get_all(&mut self.file)
     }
 
-    pub fn get_acct_trans(&mut self, id: u16) -> io::Result<Vec<Transaction>> {
+    pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<Transaction>> {
         self.transactions
             // .get_by_offsets(offsets, &mut self.file)
             .query(&mut self.file)

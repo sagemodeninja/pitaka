@@ -3,14 +3,19 @@ pub mod delta;
 use std::fs::File;
 use std::io;
 
-use crate::{
-    core::document::file::FileHandle,
-    utils::extensions::file::{FileReadExtensions, FileWriteExtensions},
+use chrono::{DateTime, Utc};
+
+use crate::utils::{
+    extensions::file::{FileReadExtensions, FileWriteExtensions},
+    file::FileHandle,
 };
 
 pub struct Record<T: RecordPayload> {
     pub o_prev: u64,
     pub o_next: u64,
+    pub id: u64,
+    pub created_at: DateTime<Utc>,
+    pub last_modified_at: DateTime<Utc>,
     pub item: T,
 }
 
@@ -20,10 +25,14 @@ pub trait RecordPayload: FileHandle {
 }
 
 impl<T: RecordPayload> Record<T> {
-    pub fn new(o_prev: u64, item: T) -> Self {
+    pub fn new(o_prev: u64, id: u64, item: T) -> Self {
         Self {
             o_prev,
             o_next: 0,
+
+            id,
+            created_at: Utc::now(),
+            last_modified_at: Utc::now(),
             item,
         }
     }
@@ -34,6 +43,10 @@ impl<T: RecordPayload> FileHandle for Record<T> {
         Ok(Record {
             o_prev: file.read_le_u64()?,
             o_next: file.read_le_u64()?,
+
+            id: file.read_le_u64()?,
+            created_at: file.read()?,
+            last_modified_at: file.read()?,
             item: T::read_from_file(file)?,
         })
     }
@@ -41,6 +54,10 @@ impl<T: RecordPayload> FileHandle for Record<T> {
     fn write_to_file(&mut self, file: &mut File) -> io::Result<()> {
         file.write_le_u64(self.o_prev)?;
         file.write_le_u64(self.o_next)?;
+
+        file.write_le_u64(self.id)?;
+        file.write(&mut self.created_at)?;
+        file.write(&mut self.last_modified_at)?;
         self.item.write_to_file(file)
     }
 }

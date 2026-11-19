@@ -1,4 +1,6 @@
 mod error;
+pub mod file;
+
 pub use error::*;
 
 use regex::Regex;

@@ -13,14 +13,13 @@ use std::fs::File;
 use std::io::{self};
 use std::os::unix::fs::MetadataExt;
 
-use crate::core::document::collection::Record;
 use crate::core::document::collection::delta::{RecordDelta, RecordDeltaType};
 use crate::core::document::collection::index::{CollectionIndexBuilder, IndexValue};
 use crate::core::document::collection::query::CollectionQueryBuilder;
-use crate::core::document::file::FileHandle;
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
 };
+use crate::utils::file::FileHandle;
 
 const COLLECTION_SIZE: u64 = 48;
 const FIRST_COLLECTION_OFFSET: u64 = 16;
@@ -100,34 +99,33 @@ impl<T: RecordPayload> Collection<T> {
             .build(self.record_count, self.o_first_record, file)
     }
 
-    pub fn get_all(&self, file: &mut File) -> io::Result<Vec<T>>
+    pub fn get_all(&self, file: &mut File) -> io::Result<Vec<Record<T>>>
     where
         T: Clone,
     {
-        let mut items: Vec<T> = vec![];
+        let mut records = Vec::new();
 
         let mut cursor = self.o_first_record;
         for _ in 0..self.record_count {
             file.move_to(cursor)?;
 
             let record = Record::<T>::read_from_file(file)?;
-            items.push(record.item);
-
             cursor = record.o_next;
+
+            records.push(record);
         }
 
         // for item in &self.for_append {
         //     items.push(item.item.clone());
         // }
 
-        Ok(items)
+        Ok(records)
     }
 
-    pub fn add(&mut self, ctor: impl FnOnce(u64) -> T) {
+    pub fn add(&mut self, item: T) {
         let id = self.next_id;
-        let item = ctor(id);
 
-        let record = Record::new(self.o_last_record, item);
+        let record = Record::new(self.o_last_record, id, item);
         self.tracked_records.insert(id, record);
 
         let delta = RecordDelta::create(id);

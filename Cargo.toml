@@ -5,6 +5,7 @@ edition = "2024"
 license = "PolyForm-Noncommercial-1.0.0"
 
 [dependencies]
+chrono = "0.4.45"
 directories = "6.0.0"
 gpui-kit = "0.9.1"
 regex = "1.13.1"
