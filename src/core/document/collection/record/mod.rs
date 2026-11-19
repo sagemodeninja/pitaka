@@ -10,6 +10,8 @@ use crate::utils::{
     file::FileHandle,
 };
 
+const HEADER_SIZE: u32 = 40;
+
 pub struct Record<T: RecordPayload> {
     pub o_prev: u64,
     pub o_next: u64,
@@ -35,6 +37,10 @@ impl<T: RecordPayload> Record<T> {
             last_modified_at: Utc::now(),
             item,
         }
+    }
+
+    pub fn size(&self) -> u32 {
+        HEADER_SIZE + self.item.size()
     }
 }
 

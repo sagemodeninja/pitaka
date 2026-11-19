@@ -12,8 +12,6 @@ use crate::{
     },
 };
 
-const DP_LENGTH_SIZE: u32 = 4;
-
 #[derive(Clone)]
 pub struct Account {
     pub display_name: String,
@@ -25,7 +23,7 @@ impl RecordPayload for Account {
     }
 
     fn size(&self) -> u32 {
-        DP_LENGTH_SIZE + self.display_name.len_u32()
+        self.display_name.len_u32()
     }
 }
 

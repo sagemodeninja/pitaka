@@ -199,7 +199,8 @@ fn render_trans(view: &PitakaView, cx: &mut App) -> Div {
     match records {
         Some(Ok(records)) => column()
             .child(row().gap_1().child("Description").child("Amount"))
-            .children(records.iter().map(|trans| {
+            .children(records.iter().map(|record| {
+                let trans = &record.item;
                 row()
                     .gap_1()
                     .child(trans.description.clone())

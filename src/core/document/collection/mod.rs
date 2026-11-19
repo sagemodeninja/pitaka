@@ -10,7 +10,7 @@ pub use transaction::*;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self};
+use std::io::{self, Seek};
 use std::os::unix::fs::MetadataExt;
 
 use crate::core::document::collection::delta::{RecordDelta, RecordDeltaType};
@@ -74,10 +74,12 @@ impl<T: RecordPayload> Collection<T> {
     }
 
     // See: /docs/develop/file_layout.md
-    pub fn read(&mut self, position: u64, file: &mut File) -> io::Result<()> {
-        self.next_id = file.read_le_u64()?;
+    pub fn read(&mut self, file: &mut File) -> io::Result<()> {
+        self.position = file.stream_position()?;
 
-        self.position = position;
+        self.o_next_collection = file.read_le_u64()?;
+        self.record_type = file.read_le_u8()?;
+        self.next_id = file.read_le_u64()?;
         self.record_count = file.read_le_u64()?;
         self.o_first_record = file.read_le_u64()?;
         self.o_last_record = file.read_le_u64()?;
@@ -139,8 +141,8 @@ impl<T: RecordPayload> Collection<T> {
         T: Clone,
     {
         // TODO: A way for for_append to participate on the query.
-        CollectionQueryBuilder::new(move |plan| {
-            let mut items: Vec<T> = vec![];
+        CollectionQueryBuilder::new(|plan| {
+            let mut records = Vec::new();
 
             let mut offsets: Option<&Vec<u64>> = None;
             for (key, value) in plan.indexed_filters {
@@ -164,15 +166,15 @@ impl<T: RecordPayload> Collection<T> {
             };
 
             for &offset in iter.skip(plan.skip as usize).take(take) {
-                file.move_to(offset + 16)?;
-                items.push(T::read_from_file(file)?);
+                file.move_to(offset)?;
+                records.push(Record::<T>::read_from_file(file)?);
             }
 
             // for item in &self.for_append {
             //     items.push(item.item.clone());
             // }
 
-            Ok(items)
+            Ok(records)
         })
     }
 }
@@ -205,7 +207,6 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
             // Append new records...
             for index in 0..append_len {
-                println!("Index: {index}. Pos: {o_next}");
                 let is_last = index == append_len - 1;
 
                 if is_last {
@@ -220,7 +221,7 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
                     o_prev = o_next;
                     o_next = if !is_last {
-                        o_next + record.item.size() as u64
+                        o_next + record.size() as u64
                     } else {
                         0
                     };
@@ -230,6 +231,9 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
                 }
             }
         }
+
+        self.updates.clear();
+        self.tracked_records.clear();
 
         // Update collection header...
         file.move_to(self.position)?;

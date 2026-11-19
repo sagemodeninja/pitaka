@@ -58,9 +58,8 @@ impl PitakaDocument {
         self.accounts.get_all(&mut self.file)
     }
 
-    pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<Transaction>> {
+    pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<Record<Transaction>>> {
         self.transactions
-            // .get_by_offsets(offsets, &mut self.file)
             .query(&mut self.file)
             .filter_indexed("acct_id", id.into())
             .reverse()
@@ -125,9 +124,11 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
         let o_c_next = file.read_le_u64()?;
         let c_type = file.read_le_u8()?;
 
+        file.move_to(o_c_curr)?;
+
         match c_type {
-            1 => accounts.read(o_c_curr, &mut file)?,
-            2 => transactions.read(o_c_curr, &mut file)?,
+            1 => accounts.read(&mut file)?,
+            2 => transactions.read(&mut file)?,
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidData,

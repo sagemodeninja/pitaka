@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io};
 
-use crate::core::document::collection::index::IndexValue;
+use crate::core::document::collection::{Record, RecordPayload, index::IndexValue};
 
 pub struct CollectionQueryPlan {
     pub skip: u32,
@@ -9,9 +9,9 @@ pub struct CollectionQueryPlan {
     pub indexed_filters: HashMap<String, IndexValue>,
 }
 
-pub struct CollectionQueryBuilder<'a, T> {
+pub struct CollectionQueryBuilder<'a, T: RecordPayload> {
     plan: CollectionQueryPlan,
-    collector: Box<dyn FnOnce(CollectionQueryPlan) -> io::Result<Vec<T>> + 'a>,
+    collector: Box<dyn FnOnce(CollectionQueryPlan) -> io::Result<Vec<Record<T>>> + 'a>,
 }
 
 impl CollectionQueryPlan {
@@ -25,11 +25,13 @@ impl CollectionQueryPlan {
     }
 }
 
-impl<'a, T> CollectionQueryBuilder<'a, T> {
-    pub fn new(exec: impl FnOnce(CollectionQueryPlan) -> io::Result<Vec<T>> + 'a) -> Self {
+impl<'a, T: RecordPayload> CollectionQueryBuilder<'a, T> {
+    pub fn new(
+        collector: impl FnOnce(CollectionQueryPlan) -> io::Result<Vec<Record<T>>> + 'a,
+    ) -> Self {
         Self {
-            collector: Box::new(exec),
             plan: CollectionQueryPlan::new(),
+            collector: Box::new(collector),
         }
     }
 
@@ -53,7 +55,7 @@ impl<'a, T> CollectionQueryBuilder<'a, T> {
         self
     }
 
-    pub fn collect(self) -> io::Result<Vec<T>> {
+    pub fn collect(self) -> io::Result<Vec<Record<T>>> {
         (self.collector)(self.plan)
     }
 }

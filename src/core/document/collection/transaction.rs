@@ -14,7 +14,6 @@ use crate::utils::file::FileHandle;
 const ACCT_ID_SIZE: u32 = 8;
 const OCCURED_AT_SIZE: u32 = 8;
 const AMOUNT_SIZE: u32 = 8;
-const DESC_LENGTH_SIZE: u32 = 4;
 
 #[derive(Clone)]
 pub struct Transaction {
@@ -31,7 +30,7 @@ impl RecordPayload for Transaction {
 
     fn size(&self) -> u32 {
         let desc_len = self.description.len_u32();
-        ACCT_ID_SIZE + OCCURED_AT_SIZE + AMOUNT_SIZE + DESC_LENGTH_SIZE + desc_len
+        ACCT_ID_SIZE + OCCURED_AT_SIZE + AMOUNT_SIZE + desc_len
     }
 }
 

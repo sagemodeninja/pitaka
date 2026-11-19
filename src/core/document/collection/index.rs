@@ -1,7 +1,7 @@
-use std::{collections::HashMap, fs::File, io};
+use std::{collections::HashMap, fmt::Display, fs::File, io};
 
 use crate::{
-    core::document::collection::{RecordPayload, record::Record},
+    core::document::collection::{RecordPayload, index::IndexValue::U64, record::Record},
     utils::{extensions::file::FileCursorExtensions, file::FileHandle},
 };
 
@@ -15,6 +15,16 @@ pub enum IndexValue {
 impl Into<IndexValue> for u64 {
     fn into(self) -> IndexValue {
         IndexValue::U64(self)
+    }
+}
+
+impl Display for IndexValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let content = match self {
+            U64(value) => format!("{value}"),
+        };
+
+        write!(f, "{content}")
     }
 }
 
