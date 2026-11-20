@@ -46,6 +46,27 @@ AND queries could intersect candidate offsets or use one index to find candidate
 ## Devlogs
 
 <details>
+<summary><strong>Nov. 21, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 12:06 AM +08:00 | The current query avoids collecting and sorting IDs for unfiltered queries and cloning the index bucket for indexed queries. Indexed queries currently resolve directory entries before pagination, so skipped candidates still cost lookups. Paginating the borrowed IDs first would limit lookups to the page if the bucket contains only visible records with valid directory entries. Flagged pending deletions as a query design concern. If a deleted record still appears in an index bucket or the directory before save, it can appear in results or consume a pagination slot. Decide how indexed and unfiltered queries exclude pending deletions before `skip` and `take`, especially if indexed queries paginate IDs before resolving their locations. Considered a hybrid directory with an ordered vector of entries and a map from ID to vector position. Appends and in-place locator changes preserve existing positions. Removing an entry from the vector shifts later positions, so deletion would require updating the map or retaining a tombstone and excluding it before pagination. The hybrid trades additional memory for expected constant-time ID lookup. |
+
+</details>
+
+<details>
+<summary><strong>Nov. 20, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 10:49 PM +08:00 | Added an initial vector-backed `RecordDirectory` alongside the map. Loading records populates both, and query location lookup uses binary search in the new directory. At that stage, unfiltered candidate selection and tracking of new records still used the map. The query now takes unfiltered entries directly from the directory and resolves indexed IDs lazily. Forward and reverse traversal share a single boxed candidate iterator and the same pagination loop. |
+| 10:06 PM +08:00 | Considered a sorted `Vec<(u64, RecordLocation)>` for the directory. New records get increasing IDs, saves append them in creation order, and reads follow those links. The vector could support binary search by ID and ordered pagination without collecting and sorting directory keys on each unfiltered query. The implemented write path currently handles new records. For edits, the proposed path keeps the existing ID and replaces its locator in place with `InMemory` while the edited record is tracked. If a save relocates the record, the writer would update the existing links to point to the new offset and preserve traversal order. The relocation implementation is still open. Discussed giving the directory a dedicated `RecordDirectory` type, with `collection/directory.rs` proposed because record location lookup also serves persistence and tracking. |
+
+</details>
+
+<details>
 <summary><strong>Nov. 19, 2026</strong></summary>
 <br>
 

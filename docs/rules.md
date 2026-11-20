@@ -25,6 +25,8 @@ Add a `## Contents` section near the top. Use a bulleted list of links to the pa
 
 ## Devlogs
 
+Record meaningful Pitaka changes, decisions, proposals, and open questions worth revisiting. Skip routine clarifications, general language or API questions, and casual exchanges unless they lead to a substantive Pitaka outcome. Honor explicit requests to omit a discussion from the devlog.
+
 Put devlogs under a `## Devlogs` heading. Use one collapsible section per date, with newest dates first. Put a Markdown table with `Time` and `Logs` columns inside each section and sort its rows by timestamp, newest first. Record the developer’s local time with its UTC offset. Keep entries brief and merge related follow-ups when one row can still capture the sequence. Give distinct decisions or milestones their own timestamp.
 
 <details>

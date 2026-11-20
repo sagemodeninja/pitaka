@@ -1,4 +1,5 @@
 mod account;
+mod directory;
 mod index;
 mod query;
 mod record;
@@ -14,6 +15,7 @@ use std::io::{self, Seek};
 use std::os::unix::fs::MetadataExt;
 
 use crate::core::document::collection::delta::RecordDelta;
+use crate::core::document::collection::directory::RecordDirectory;
 use crate::core::document::collection::index::{CollectionIndexBuilder, IndexValue};
 use crate::core::document::collection::location::RecordLocation::{self, InMemory, OnDisk};
 use crate::core::document::collection::query::CollectionQueryBuilder;
@@ -36,6 +38,7 @@ pub struct Collection<T: RecordPayload> {
     pub o_first_record: u64,
     pub o_last_record: u64,
 
+    dir: RecordDirectory,
     directory: HashMap<u64, RecordLocation>,
     indexes: CollectionIndexBuilder<T>,
     updates: Vec<RecordDelta>,
@@ -54,6 +57,7 @@ impl<T: RecordPayload> Collection<T> {
             o_first_record: 0,
             o_last_record: 0,
 
+            dir: RecordDirectory::new(),
             directory: HashMap::new(),
             indexes: CollectionIndexBuilder::new(),
             updates: Vec::new(),
@@ -106,6 +110,8 @@ impl<T: RecordPayload> Collection<T> {
             file.move_to(o_r_next)?;
 
             let record = Record::<T>::read_from_file(file)?;
+
+            self.dir.insert(record.id, OnDisk(o_r_next));
             self.directory.insert(record.id, OnDisk(o_r_next));
             self.indexes.insert(&record);
 
@@ -119,30 +125,30 @@ impl<T: RecordPayload> Collection<T> {
     where
         T: Clone,
     {
-        CollectionQueryBuilder::new(|plan| {
+        CollectionQueryBuilder::new(move |plan| {
             let mut records = Vec::new();
 
-            let ids: Vec<u64> = if !plan.indexed_filters.is_empty() {
-                let mut ids = Vec::new();
-                for (key, value) in plan.indexed_filters {
-                    if let Some(index) = self.indexes.get(&key) {
-                        if let Some(y) = index.get(&value) {
-                            ids = y.clone();
-                        }
-                        break;
-                    }
-                }
-                ids
-            } else {
-                let mut ids: Vec<u64> = self.directory.keys().copied().collect();
-                ids.sort_unstable();
-                ids
-            };
+            let mut candidates: Box<dyn DoubleEndedIterator<Item = &(u64, RecordLocation)> + '_> =
+                if plan.indexed_filters.is_empty() {
+                    Box::new(self.dir.iter())
+                } else {
+                    let ids = plan
+                        .indexed_filters
+                        .iter()
+                        .next()
+                        .and_then(|(key, value)| self.indexes.get(key)?.get(value))
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]);
 
-            let iter: Box<dyn Iterator<Item = &u64> + '_> = if plan.is_reversed {
-                Box::new(ids.iter().rev())
+                    Box::new(ids.iter().filter_map(move |id| self.dir.get(id)))
+                };
+
+            let mut reversed;
+            let iter: &mut dyn Iterator<Item = &(u64, RecordLocation)> = if plan.is_reversed {
+                reversed = candidates.rev();
+                &mut reversed
             } else {
-                Box::new(ids.iter())
+                &mut candidates
             };
 
             let take = match plan.take {
@@ -150,17 +156,15 @@ impl<T: RecordPayload> Collection<T> {
                 None => usize::MAX,
             };
 
-            for &id in iter.skip(plan.skip as usize).take(take) {
-                if let Some(location) = self.directory.get(&id) {
-                    match location {
-                        OnDisk(offset) => {
-                            file.move_to(*offset)?;
-                            records.push(Record::<T>::read_from_file(file)?);
-                        }
-                        InMemory => {
-                            if let Some(item) = self.tracked.get(&id) {
-                                records.push(item.clone());
-                            }
+            for (id, location) in iter.skip(plan.skip as usize).take(take) {
+                match location {
+                    OnDisk(offset) => {
+                        file.move_to(*offset)?;
+                        records.push(Record::<T>::read_from_file(file)?);
+                    }
+                    InMemory => {
+                        if let Some(item) = self.tracked.get(id) {
+                            records.push(item.clone());
                         }
                     }
                 }

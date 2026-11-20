@@ -16,6 +16,7 @@ This acts as both official documentation and devlogs.
 | [Code Organization](code_organization.md) | Module responsibilities, dependency direction, and where new logic belongs. |
 | [File Layout](file_layout.md) | Binary structures, offsets, and record payloads. |
 | [Querying](querying.md) | Collection queries, relationships, and indexing. |
+| [Findings](findings.md) | Shared record of verified issues and their resolutions. |
 | [Documentation Rules](../rules.md) | Breadcrumbs, tables of contents, devlogs, and collapsible sections. |
 
 ## Devlogs
