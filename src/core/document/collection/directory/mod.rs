@@ -33,12 +33,6 @@ impl RecordDirectory {
         Some(&self.directory[index])
     }
 
-    /// Returns the location of the record with the given ID, if it exists.
-    pub fn find(&self, id: &u64) -> Option<&RecordLocation> {
-        let index = self.index_of(id)?;
-        Some(&self.directory[index].1)
-    }
-
     pub fn insert(&mut self, id: u64, loc: RecordLocation) {
         self.directory.push((id, loc));
     }
