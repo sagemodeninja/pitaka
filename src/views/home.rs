@@ -1,5 +1,6 @@
 use crate::components::liquid::LiquidSurface;
 use crate::components::liquid::button::LiquidButton;
+use crate::components::scalable_icon::ScalableIcon;
 
 use chrono::Utc;
 use gpui::rgba;
@@ -107,7 +108,7 @@ fn render_main(view: &mut PitakaView, cx: &mut Context<PitakaView>) -> Div {
                 .child(
                     row().p_2().justify_end().child(
                         LiquidButton::new("liquid-add-button")
-                            .icon(Icon::new(IconName::Plus).size(px(20.0))),
+                            .icon(ScalableIcon::new(IconName::Plus).size(20.0)),
                     ),
                 )
                 .child(

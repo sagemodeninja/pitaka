@@ -1,5 +1,6 @@
 mod launch_action;
 pub mod liquid;
+pub mod scalable_icon;
 
 pub use launch_action::LaunchAction;
 
