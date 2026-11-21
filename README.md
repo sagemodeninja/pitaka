@@ -4,7 +4,8 @@ Another application based on my original "eMoney" project this time written in R
 
 ## Documentation
 
-- [Development](docs/develop/README.md) — file format and implementation notes.
+- [Contributing](CONTRIBUTING.md) — setup, issues, and pull requests.
+- [Development](docs/develop/README.md) — implementation notes.
 
 ## License
 

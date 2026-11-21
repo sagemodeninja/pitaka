@@ -6,11 +6,13 @@ version = 4
 name = "Pitaka"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "directories",
  "gpui-kit",
  "regex",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

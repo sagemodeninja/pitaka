@@ -1,15 +1,15 @@
 pub mod collection;
 
-use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Error, ErrorKind, Seek, Write};
 use std::path::PathBuf;
 
-use crate::core::document::collection::{Account, Collection, FileHandle, Transaction};
+use crate::core::document::collection::{Account, Collection, Record, Transaction};
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
 };
+use crate::utils::file::FileHandle;
 
 const MAGIC_NUMBER: [u8; 4] = *b"PTKA";
 const CURRENT_FORMAT_VERSION: u16 = 1;
@@ -20,8 +20,6 @@ const MINIMUM_FILE_SIZE: u64 = HEADER_SIZE + COLLECTION_SIZE;
 
 pub struct PitakaDocument {
     file: File,
-    cursor: u64,
-    acct_trans: HashMap<u16, Vec<u64>>,
 
     pub accounts: Collection<Account>,
     pub transactions: Collection<Transaction>,
@@ -39,15 +37,13 @@ impl PitakaDocument {
         file.write_zeros(10)?; // Reserved...
 
         // Collections...
-        let accounts = Collection::create(1, &mut file)?;
-        let transactions = Collection::create(2, &mut file)?;
+        let accounts = Collection::create(&mut file)?;
+        let transactions = Collection::create(&mut file)?;
 
-        let cursor = file.stream_position()?;
+        file.move_to(0)?;
 
         Ok(PitakaDocument {
             file,
-            cursor,
-            acct_trans: HashMap::new(),
             accounts,
             transactions,
         })
@@ -58,21 +54,21 @@ impl PitakaDocument {
         read_document(file)
     }
 
-    pub fn get_all_accts(&mut self) -> io::Result<Vec<Account>> {
-        self.accounts.get_all(&mut self.file)
+    pub fn get_all_accts(&mut self) -> io::Result<Vec<Record<Account>>> {
+        self.accounts.query(&mut self.file).collect()
     }
 
-    pub fn get_acct_trans(&mut self, id: u16) -> io::Result<Vec<Transaction>> {
-        if let Some(offsets) = self.acct_trans.get(&id) {
-            self.transactions.get_by_offsets(offsets, &mut self.file)
-        } else {
-            Ok(Vec::new())
-        }
+    pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<Record<Transaction>>> {
+        self.transactions
+            .query(&mut self.file)
+            .filter_indexed("acct_id", id.into())
+            .reverse()
+            .collect()
     }
 
     pub fn save(&mut self) -> io::Result<()> {
-        self.accounts.write(&mut self.file, &mut self.cursor)?;
-        self.transactions.write(&mut self.file, &mut self.cursor)?;
+        self.accounts.write_to_file(&mut self.file)?;
+        self.transactions.write_to_file(&mut self.file)?;
         Ok(())
     }
 }
@@ -88,12 +84,10 @@ fn open_file(path: &PathBuf, truncate: bool) -> io::Result<File> {
 
 // SEE: /docs/develop/file_layout.md
 fn read_document(mut file: File) -> io::Result<PitakaDocument> {
-    let file_len = file.metadata()?.len();
-
     // Header...
     file.move_to(0)?;
 
-    if file_len < MINIMUM_FILE_SIZE {
+    if file.metadata()?.len() < MINIMUM_FILE_SIZE {
         return Err(Error::new(
             ErrorKind::InvalidData,
             format!("Document is too short: expected at least {MINIMUM_FILE_SIZE} bytes."),
@@ -120,17 +114,21 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
     file.move_for(10)?; // Reserved.
 
     // Collection discovery...
-    let mut accounts = Collection::<Account>::empty(0);
-    let mut transactions = Collection::<Transaction>::empty(0);
+    let mut accounts = Collection::<Account>::empty();
+    let mut transactions = Collection::<Transaction>::empty();
+
+    transactions.add_index("acct_id", |trans| trans.account_id.into());
 
     loop {
         let o_c_curr = file.stream_position()?;
         let o_c_next = file.read_le_u64()?;
         let c_type = file.read_le_u8()?;
 
+        file.move_to(o_c_curr)?;
+
         match c_type {
-            1 => accounts.read(o_c_curr, &mut file)?,
-            2 => transactions.read(o_c_curr, &mut file)?,
+            1 => accounts.read(&mut file)?,
+            2 => transactions.read(&mut file)?,
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
@@ -146,35 +144,14 @@ fn read_document(mut file: File) -> io::Result<PitakaDocument> {
         }
     }
 
-    let acct_trans_ids = index_transactions(&mut transactions, &mut file)?;
+    accounts.build_indexes(&mut file)?;
+    transactions.build_indexes(&mut file)?;
+
     file.move_to(0)?;
 
     Ok(PitakaDocument {
         file,
-        cursor: file_len,
-        acct_trans: acct_trans_ids,
         accounts,
         transactions,
     })
-}
-
-fn index_transactions(
-    col: &mut Collection<Transaction>,
-    file: &mut File,
-) -> io::Result<HashMap<u16, Vec<u64>>> {
-    let mut acct_trans_ids = HashMap::<u16, Vec<u64>>::new();
-
-    let mut o_r_curr = col.o_first_record;
-    for _ in 0..col.record_count {
-        file.move_to(o_r_curr + 8)?;
-        let o_r_next = file.read_le_u64()?;
-
-        file.move_for(8)?;
-        let acct_id = file.read_le_u16()?;
-
-        acct_trans_ids.entry(acct_id).or_default().push(o_r_curr);
-        o_r_curr = o_r_next;
-    }
-
-    Ok(acct_trans_ids)
 }

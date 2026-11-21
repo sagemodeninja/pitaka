@@ -2,12 +2,11 @@
 
 # File Layout
 
-> **Warning:** This format is unstable. Any update may make existing saves unreadable. No migration or recovery tools are provided, and compatibility fixes are not planned during development.
-
-Sizes and offsets are in bytes. Integers are little-endian. Table offsets are relative to the structure shown; stored offsets are absolute `u64` file positions, with `0` meaning no target. Reserved bytes must be zero. Types describe field encodings; sizes describe serialized bytes, not Rust memory layouts.
+> **Warning:** This format is unstable. Any update may make existing saves unreadable. No migration or recovery tools are provided, and compatibility fixes are not planned at this point of the development.
 
 ## Contents
 
+- [Format Rules](#format-rules)
 - [File Header](#file-header)
 - [Collections](#collections)
 - [Records](#records)
@@ -15,6 +14,17 @@ Sizes and offsets are in bytes. Integers are little-endian. Table offsets are re
   - [Transaction Payload](#transaction-payload)
 - [Structures](#structures)
   - [Length-Prefixed String](#length-prefixed-string)
+
+## Format Rules
+
+| Rule | Specification |
+| --- | --- |
+| Units and types | All sizes and offsets are measured in bytes. The Type and Size columns describe the on-disk encoding and serialized width. |
+| Byte order | All integers use little-endian byte order. |
+| Table offsets | Each Offset column is relative to the start of the structure described by that table. |
+| Stored offsets | Offset fields store absolute `u64` byte positions from the start of the file. A value of `0` means there is no target. |
+| Reserved bytes | All reserved bytes must be zero. |
+| Timestamps | Timestamps are signed `i64` milliseconds since the Unix epoch (1970-01-01 00:00:00 UTC). |
 
 ## File Header
 
@@ -33,7 +43,7 @@ Collections form a singly linked list of 48-byte headers, including 7 reserved b
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
 | 0 | 8 | Next collection offset | `u64` | Next collection header. |
-| 8 | 1 | Collection type | `u8` | Record type identifier. |
+| 8 | 1 | Record type | `u8` | Record type identifier. |
 | 9 | 8 | Next record ID | `u64` | Next record ID; never reduced when records are deleted. |
 | 17 | 8 | Record count | `u64` | Persisted record count. |
 | 25 | 8 | First record offset | `u64` | First record. |
@@ -44,15 +54,18 @@ Collections form a singly linked list of 48-byte headers, including 7 reserved b
 
 ## Records
 
-A 16-byte link header followed by a collection-specific payload. Records form a doubly linked list.
+A 40-byte record header contains the links, record ID, and timestamps. Records form a doubly linked list.
 
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
 | 0 | 8 | Previous record offset | `u64` | Previous record. |
 | 8 | 8 | Next record offset | `u64` | Next record. |
-| 16 | Variable | Payload | Varies | See layouts below. |
+| 16 | 8 | ID | `u64` | Unique within the collection. |
+| 24 | 8 | Created at | `i64` | Timestamp when the record was created. |
+| 32 | 8 | Last modified at | `i64` | Timestamp when the record was last modified. |
+| 40 | Variable | Payload | Varies | See layouts below. |
 
-> Payload offsets start after the link header.
+> Payload offset `0` is record offset `40`.
 
 <a id="account-payload"></a>
 
@@ -65,10 +78,9 @@ A place where money is held, such as a bank account, wallet, or piggy bank.
 
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
-| 0 | 2 | ID | `u16` | Unique within the account collection. |
-| 2 | 4 + N | Display name | [Length-prefixed string](#length-prefixed-string) | Account name shown in the UI. |
+| 0 | 4 + N | Display name | [Length-prefixed string](#length-prefixed-string) | Account name shown in the UI. |
 
-Size: `6 + N` bytes; `22 + N` including the link header.
+> The payload is `4 + N` bytes. The full record is `44 + N` bytes.
 
 </details>
 
@@ -79,16 +91,16 @@ Size: `6 + N` bytes; `22 + N` including the link header.
 
 <br>
 
+Represents the movement of money.
+
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
-| 0 | 8 | ID | `u64` | Unique within the transaction collection. |
-| 8 | 2 | Account ID | `u16` | Account this transaction belongs to. |
-| 10 | 4 + N | Description | [Length-prefixed string](#length-prefixed-string) | Transaction description. |
-| 14 + N | 8 | Amount | `i64` | Signed amount in centavos. |
+| 0 | 8 | Account ID | `u64` | Account this transaction belongs to. |
+| 8 | 8 | Occurred at | `i64` | Timestamp when the transaction happened. |
+| 16 | 8 | Amount | `i64` | Signed amount in centavos. |
+| 24 | 4 + N | Description | [Length-prefixed string](#length-prefixed-string) | Transaction description. |
 
-Size: `22 + N` bytes; `38 + N` including the link header.
-
-**Planned:** a free-space collection will track deleted regions for reuse or compaction.
+> The payload is `28 + N` bytes. The full record is `68 + N` bytes.
 
 </details>
 
@@ -110,3 +122,7 @@ A little-endian `u32` byte length followed by UTF-8 data, with no padding or ter
 Size: `4 + N` bytes. Maximum data length: `u32::MAX` bytes.
 
 </details>
+
+---
+
+> **Planned:** a free-space collection will track deleted regions for reuse or compaction.

@@ -1,13 +1,15 @@
+use chrono::Utc;
 use gpui_kit::assets::IconName;
-use gpui_kit::component::Icon;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::empty::{
     Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyMediaVariant, EmptyTitle,
 };
 use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::native_menu::NativeMenu;
+use gpui_kit::component::{ActiveTheme, Icon, TitleBar};
 use gpui_kit::{
-    App, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    App, Context, Div, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
+    StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use crate::components::LaunchAction;
@@ -19,7 +21,7 @@ use crate::utils::actions::{NewFile, OpenFile};
 
 pub struct PitakaView {
     pub state: Entity<PitakaState>,
-    pub selected_acct_id: u16,
+    pub selected_acct_id: u64,
     pub acct_dname_ipt: Entity<InputState>,
     pub trans_desc_ipt: Entity<InputState>,
     pub trans_amnt_ipt: Entity<InputState>,
@@ -33,7 +35,24 @@ impl Render for PitakaView {
             render_welcome(_cx)
         };
 
-        div().size_full().child(content)
+        div()
+            .size_full()
+            .child(
+                TitleBar::new().child("Pitaka").child(
+                    div()
+                        .on_mouse_down(MouseButton::Left, |event, window, cx| {
+                            cx.stop_propagation();
+
+                            NativeMenu::new()
+                                .menu("Open Document…", Box::new(OpenFile))
+                                .separator()
+                                .menu("New Document…", Box::new(NewFile))
+                                .show(event.position, window, cx);
+                        })
+                        .child("Opt"),
+                ),
+            )
+            .child(content)
     }
 }
 
@@ -92,8 +111,7 @@ fn render_main(view: &mut PitakaView, cx: &mut Context<PitakaView>) -> Div {
                             this.state.update(cx, |state, cx| {
                                 if let Some(doc) = &mut state.document {
                                     let dname = this.acct_dname_ipt.read(cx).value();
-                                    doc.accounts.add(|id| Account {
-                                        id: id as u16,
+                                    doc.accounts.add(Account {
                                         display_name: dname.into(),
                                     });
                                     cx.notify();
@@ -121,9 +139,9 @@ fn render_main(view: &mut PitakaView, cx: &mut Context<PitakaView>) -> Div {
                                     let s_amnt = this.trans_amnt_ipt.read(cx).value();
 
                                     if let Ok(amount) = s_amnt.parse::<Money>() {
-                                        doc.transactions.add(|id| Transaction {
-                                            id,
+                                        doc.transactions.add(Transaction {
                                             account_id: this.selected_acct_id,
+                                            occured_at: Utc::now(),
                                             description: desc.into(),
                                             amount,
                                         });
@@ -146,20 +164,21 @@ fn render_accts(view: &PitakaView, cx: &mut Context<PitakaView>) -> Div {
         Some(Ok(records)) => {
             column()
                 .child(row().gap_1().child("Name"))
-                .children(records.into_iter().map(|acct| {
-                    let highlight = if acct.id == view.selected_acct_id {
-                        rgb(0xff0000)
+                .children(records.into_iter().map(|record| {
+                    let (background, foreground) = if record.id == view.selected_acct_id {
+                        (cx.theme().accent, cx.theme().accent_foreground)
                     } else {
-                        rgb(0xffffff)
+                        (cx.theme().background, cx.theme().foreground)
                     };
 
                     row()
-                        .id(format!("acct_row_{}", acct.id))
-                        .bg(highlight)
+                        .id(format!("acct_row_{}", record.id))
+                        .bg(background)
+                        .text_color(foreground)
                         .gap_1()
-                        .child(acct.display_name)
+                        .child(record.item.display_name)
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.selected_acct_id = acct.id;
+                            this.selected_acct_id = record.id;
                             cx.notify();
                         }))
                 }))
@@ -180,7 +199,8 @@ fn render_trans(view: &PitakaView, cx: &mut App) -> Div {
     match records {
         Some(Ok(records)) => column()
             .child(row().gap_1().child("Description").child("Amount"))
-            .children(records.iter().map(|trans| {
+            .children(records.iter().map(|record| {
+                let trans = &record.item;
                 row()
                     .gap_1()
                     .child(trans.description.clone())

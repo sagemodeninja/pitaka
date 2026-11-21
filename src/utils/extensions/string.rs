@@ -4,6 +4,6 @@ pub trait StringExtensions {
 
 impl StringExtensions for String {
     fn len_u32(&self) -> u32 {
-        self.len() as u32
+        4 + self.len() as u32
     }
 }
