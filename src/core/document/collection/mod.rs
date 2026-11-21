@@ -38,8 +38,7 @@ pub struct Collection<T: RecordPayload> {
     pub o_first_record: u64,
     pub o_last_record: u64,
 
-    dir: RecordDirectory,
-    directory: HashMap<u64, RecordLocation>,
+    directory: RecordDirectory,
     indexes: CollectionIndexBuilder<T>,
     updates: Vec<RecordDelta>,
     tracked: HashMap<u64, Record<T>>,
@@ -57,8 +56,7 @@ impl<T: RecordPayload> Collection<T> {
             o_first_record: 0,
             o_last_record: 0,
 
-            dir: RecordDirectory::new(),
-            directory: HashMap::new(),
+            directory: RecordDirectory::new(),
             indexes: CollectionIndexBuilder::new(),
             updates: Vec::new(),
             tracked: HashMap::new(),
@@ -111,7 +109,6 @@ impl<T: RecordPayload> Collection<T> {
 
             let record = Record::<T>::read_from_file(file)?;
 
-            self.dir.insert(record.id, OnDisk(o_r_next));
             self.directory.insert(record.id, OnDisk(o_r_next));
             self.indexes.insert(&record);
 
@@ -130,7 +127,7 @@ impl<T: RecordPayload> Collection<T> {
 
             let mut candidates: Box<dyn DoubleEndedIterator<Item = &(u64, RecordLocation)> + '_> =
                 if plan.indexed_filters.is_empty() {
-                    Box::new(self.dir.iter())
+                    Box::new(self.directory.iter())
                 } else {
                     let ids = plan
                         .indexed_filters
@@ -140,7 +137,7 @@ impl<T: RecordPayload> Collection<T> {
                         .map(Vec::as_slice)
                         .unwrap_or(&[]);
 
-                    Box::new(ids.iter().filter_map(move |id| self.dir.get(id)))
+                    Box::new(ids.iter().filter_map(move |id| self.directory.get(id)))
                 };
 
             let mut reversed;
@@ -227,7 +224,9 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
                 let id = for_append[index as usize];
                 if let Some(record) = self.tracked.get_mut(&id) {
-                    file.move_to(o_next)?;
+                    let o_curr = o_next;
+
+                    file.move_to(o_curr)?;
 
                     record.o_prev = o_prev;
 
@@ -240,6 +239,8 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
                     record.o_next = o_next;
                     record.write_to_file(file)?;
+
+                    self.directory.update(id, OnDisk(o_curr))?;
                 }
             }
         }
