@@ -40,11 +40,13 @@ impl<'a, T: RecordPayload> CollectionQueryBuilder<'a, T> {
         self
     }
 
+    #[allow(dead_code)]
     pub fn skip(mut self, n: u32) -> Self {
         self.plan.skip = n;
         self
     }
 
+    #[allow(dead_code)]
     pub fn take(mut self, n: u32) -> Self {
         self.plan.take = Some(n);
         self

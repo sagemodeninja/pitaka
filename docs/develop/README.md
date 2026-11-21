@@ -7,6 +7,7 @@ This acts as both official documentation and devlogs.
 ## Contents
 
 - [Documents](#documents)
+- [Optimizing SVG icons](#optimizing-svg-icons)
 - [Devlogs](#devlogs)
 
 ## Documents
@@ -19,6 +20,22 @@ This acts as both official documentation and devlogs.
 | [Findings](findings.md) | Shared record of verified issues and their resolutions. |
 | [Documentation Rules](../rules.md) | Breadcrumbs, tables of contents, devlogs, and collapsible sections. |
 
+## Optimizing SVG icons
+
+Use SVGO v4 to strip editor metadata and optimize SVG markup before adding a custom icon to `assets/icons/`. With Node.js and npm installed, run this from the repository root:
+
+```sh
+npx svgo@4 assets/icons/trash.svg -o /tmp/trash.min.svg
+```
+
+Replace `trash.svg` with the icon you’re working on. The command writes a separate file so you can compare it with the original. SVGO v4 preserves an existing `viewBox` by default. Check that the optimized SVG has a `viewBox` and looks right at the size GPUI will display it. Then copy it over the original:
+
+```sh
+cp /tmp/trash.min.svg assets/icons/trash.svg
+```
+
+[SVGO command-line usage](https://github.com/svg/svgo#command-line-usage) · [SVGO v4 defaults](https://github.com/svg/svgo/blob/main/docs/06-migrations/01-migration-from-v3-to-v4.mdx)
+
 ## Devlogs
 
 <details>
@@ -27,6 +44,7 @@ This acts as both official documentation and devlogs.
 
 | Time | Logs |
 | --- | --- |
+| 09:59 PM +08:00 | Documented SVGO v4 for stripping editor metadata and optimizing custom SVG icons while preserving their scaling coordinates. |
 | 01:58 PM +08:00 | Added hover handling to `LiquidButton`. The button stores hover state under its element ID and darkens its surface on pointer entry. Callers can also register a hover callback. |
 | 01:28 PM +08:00 | Added a render-time assertion that a `LiquidButton` has a label, an icon, or both. |
 | 12:33 PM +08:00 | Made `LiquidSurface` accept GPUI children. The children determine the surface's content layout and render above its background canvas. |

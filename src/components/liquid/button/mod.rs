@@ -1,13 +1,18 @@
+mod appearance;
 mod state;
 
-use std::time::Instant;
+pub use self::appearance::*;
+
+use std::{rc::Rc, time::Instant};
 
 use gpui::{
-    App, Div, ElementId, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    RenderOnce, Stateful, StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    App, ClickEvent, Div, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, RenderOnce, Rgba, Stateful, StatefulInteractiveElement, Styled, Window, div, px,
+    rgb,
 };
 
-use crate::components::{liquid::LiquidSurface, row, scalable_icon::ScalableIcon};
+use crate::components::{ScalableIcon, center, liquid::LiquidSurface, row};
+use appearance::LiquidButtonAppearance::{Accent, Danger, Primary};
 use state::LiquidButtonState;
 
 #[derive(IntoElement, Clone)]
@@ -15,6 +20,9 @@ pub struct LiquidButton {
     id: ElementId,
     icon: Option<ScalableIcon>,
     label: Option<String>,
+    prominent: bool,
+    appearance: LiquidButtonAppearance,
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
 }
 
 impl LiquidButton {
@@ -24,6 +32,9 @@ impl LiquidButton {
             id: id.into(),
             icon: None,
             label: None,
+            prominent: false,
+            appearance: Primary,
+            on_click: None,
         }
     }
 
@@ -37,6 +48,34 @@ impl LiquidButton {
     pub fn label(mut self, text: &str) -> Self {
         self.label = Some(text.into());
         self
+    }
+
+    #[allow(dead_code)]
+    pub fn appearance(mut self, appearance: LiquidButtonAppearance) -> Self {
+        self.appearance = appearance;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
+    }
+
+    // Helpers...
+    fn foreground(&self) -> Rgba {
+        if self.prominent {
+            rgb(0x000000) // Fallback for now...
+        } else {
+            match &self.appearance {
+                Primary => rgb(0x000000),
+                Accent => rgb(0xFFC022),
+                Danger => rgb(0xDC3136),
+            }
+        }
     }
 }
 
@@ -69,48 +108,58 @@ impl RenderOnce for LiquidButton {
         }
 
         let id = self.id.clone();
-        let dummy = base_button(self.clone(), 1.0).invisible();
-        let mut button = base_button(self, scale).id(id);
 
-        button = on_hover(button, &state);
-        button = on_press(button, &state);
-        button = on_release(button, &state);
+        let mut base = base_button(&self.icon, &self.label, scale)
+            .id(id)
+            .text_color(self.foreground())
+            .on_click(move |e, w, a| {
+                if let Some(handler) = &self.on_click {
+                    handler(e, w, a);
+                }
+            });
 
-        div().relative().child(dummy).child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
+        base = on_hover(base, &state);
+        base = on_press(base, &state);
+        base = on_release(base, &state);
+
+        div()
+            .relative()
+            .child(base_button(&self.icon, &self.label, 1.0).invisible())
+            .child(
+                center().absolute().top_0().left_0().size_full().child(
                     LiquidSurface::new()
                         .tint(rgb(tint))
                         .radius(99.0 * scale)
-                        .child(button),
+                        .child(base),
                 ),
-        )
+            )
     }
 }
 
-fn base_button(this: LiquidButton, scale: f32) -> Div {
-    let p_x = px(if this.label.is_some() { 16.0 } else { 8.0 });
+fn base_button(icon: &Option<ScalableIcon>, label: &Option<String>, scale: f32) -> Div {
+    let t_s = px(14.0 * scale);
+    let p_l = px(if icon.is_some() { 11.0 } else { 16.0 });
+    let p_r = px(if label.is_some() { 16.0 } else { 11.0 });
 
     let mut button = row()
+        .gap(px(8.0 * scale))
         .items_center()
-        .gap(px(12.0 * scale))
-        .text_size(px(14.0 * scale))
-        .px(p_x * scale)
-        .py(px(8.0 * scale));
+        .pl(p_l * scale)
+        .pr(p_r * scale)
+        .py(px(11.0 * scale))
+        .text_size(t_s);
 
-    if let Some(icon) = this.icon {
-        button = button.child(icon.scale(scale));
+    if let Some(icon) = icon {
+        button = button.child(
+            center()
+                // .flex_shrink_0()
+                .size(t_s)
+                .child(icon.clone().scale(scale)),
+        );
     }
 
-    if let Some(label) = this.label {
-        button = button.child(label);
+    if let Some(label) = label {
+        button = button.child(center().h(t_s).child(label.clone()));
     }
 
     button
