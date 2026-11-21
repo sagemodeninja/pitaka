@@ -8,7 +8,7 @@ use std::{rc::Rc, time::Instant};
 use gpui::{
     App, ClickEvent, Div, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
     ParentElement, RenderOnce, Rgba, Stateful, StatefulInteractiveElement, Styled, Window, div, px,
-    rgb,
+    rgb, rgba,
 };
 
 use crate::components::{ScalableIcon, center, liquid::LiquidSurface, row};
@@ -22,6 +22,7 @@ pub struct LiquidButton {
     label: Option<String>,
     prominent: bool,
     appearance: LiquidButtonAppearance,
+    disabled: bool,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
 }
 
@@ -34,6 +35,7 @@ impl LiquidButton {
             label: None,
             prominent: false,
             appearance: Primary,
+            disabled: false,
             on_click: None,
         }
     }
@@ -57,6 +59,12 @@ impl LiquidButton {
     }
 
     #[allow(dead_code)]
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    #[allow(dead_code)]
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -67,7 +75,9 @@ impl LiquidButton {
 
     // Helpers...
     fn foreground(&self) -> Rgba {
-        if self.prominent {
+        if self.disabled {
+            rgba(0x757575BF)
+        } else if self.prominent {
             rgb(0x000000) // Fallback for now...
         } else {
             match &self.appearance {
@@ -75,6 +85,17 @@ impl LiquidButton {
                 Accent => rgb(0xFFC022),
                 Danger => rgb(0xDC3136),
             }
+        }
+    }
+
+    fn background(&self, state: &LiquidButtonState) -> Rgba {
+        if self.disabled {
+            // rgb(0xBDBDBD)
+            rgb(0xE0E0E0)
+        } else if state.hovered && !state.pressed {
+            rgb(0xE0E0E0)
+        } else {
+            rgb(0xF8F8F8)
         }
     }
 }
@@ -89,11 +110,7 @@ impl RenderOnce for LiquidButton {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| LiquidButtonState::new());
         let state_ref = state.read(cx);
 
-        let tint = if state_ref.hovered && !state_ref.pressed {
-            0xE0E0E0
-        } else {
-            0xF8F8F8
-        };
+        let tint = self.background(state_ref);
         let (scale, progress) = state_ref.scale_now();
 
         if let Some(progress) = progress {
@@ -113,7 +130,9 @@ impl RenderOnce for LiquidButton {
             .id(id)
             .text_color(self.foreground())
             .on_click(move |e, w, a| {
-                if let Some(handler) = &self.on_click {
+                if let Some(handler) = &self.on_click
+                    && !self.disabled
+                {
                     handler(e, w, a);
                 }
             });
@@ -128,7 +147,7 @@ impl RenderOnce for LiquidButton {
             .child(
                 center().absolute().top_0().left_0().size_full().child(
                     LiquidSurface::new()
-                        .tint(rgb(tint))
+                        .tint(tint)
                         .radius(99.0 * scale)
                         .child(base),
                 ),
@@ -150,12 +169,7 @@ fn base_button(icon: &Option<ScalableIcon>, label: &Option<String>, scale: f32) 
         .text_size(t_s);
 
     if let Some(icon) = icon {
-        button = button.child(
-            center()
-                // .flex_shrink_0()
-                .size(t_s)
-                .child(icon.clone().scale(scale)),
-        );
+        button = button.child(center().size(t_s).child(icon.clone().scale(scale)));
     }
 
     if let Some(label) = label {

@@ -27,7 +27,7 @@ use crate::{
 
 pub struct AccountsPage {
     state: Entity<PitakaState>,
-    selected_acct_id: u64,
+    selected_acct_id: Option<u64>,
 
     acct_form_visible: bool,
     acct_dname_ipt: Entity<InputState>,
@@ -39,7 +39,7 @@ impl AccountsPage {
     pub fn new(state: &Entity<PitakaState>, window: &mut Window, app: &mut App) -> Entity<Self> {
         app.new(|cx| Self {
             state: state.clone(),
-            selected_acct_id: 0,
+            selected_acct_id: None,
             acct_form_visible: false,
             acct_dname_ipt: cx.new(|cx| InputState::new(window, cx).placeholder("Enter name")),
             trans_desc_ipt: cx
@@ -76,9 +76,11 @@ impl Render for AccountsPage {
                                     doc.accounts.add(Account {
                                         display_name: dname.into(),
                                     });
-                                    cx.notify();
-                                }
-                            })
+                                };
+
+                                this.acct_form_visible = false;
+                                cx.notify();
+                            });
                         })),
                 )
         } else {
@@ -92,8 +94,9 @@ impl Render for AccountsPage {
                     .gap_2()
                     .child(
                         row()
-                            .p_2()
+                            .gap_1()
                             .justify_end()
+                            .p_2()
                             .border_b_1()
                             .border_color(rgba(0x42424240))
                             .child(
@@ -109,17 +112,9 @@ impl Render for AccountsPage {
                                     .appearance(LiquidButtonAppearance::Danger)
                                     .icon(ScalableIcon::new(CustomIcon::Trash).size(18.0))
                                     .label("Delete")
+                                    .disabled(self.selected_acct_id.is_none())
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.acct_form_visible = true;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                LiquidButton::new("liquid-edit-button-2")
-                                    .appearance(LiquidButtonAppearance::Danger)
-                                    .label("Delete")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.acct_form_visible = true;
+                                        this.acct_form_visible = false;
                                         cx.notify();
                                     })),
                             ),
@@ -144,17 +139,19 @@ impl Render for AccountsPage {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.state.update(cx, |state, cx| {
                                     if let Some(doc) = &mut state.document {
-                                        let desc = this.trans_desc_ipt.read(cx).value();
-                                        let s_amnt = this.trans_amnt_ipt.read(cx).value();
+                                        if let Some(id) = this.selected_acct_id {
+                                            let desc = this.trans_desc_ipt.read(cx).value();
+                                            let s_amnt = this.trans_amnt_ipt.read(cx).value();
 
-                                        if let Ok(amount) = s_amnt.parse::<Money>() {
-                                            doc.transactions.add(Transaction {
-                                                account_id: this.selected_acct_id,
-                                                occured_at: Utc::now(),
-                                                description: desc.into(),
-                                                amount,
-                                            });
-                                            cx.notify();
+                                            if let Ok(amount) = s_amnt.parse::<Money>() {
+                                                doc.transactions.add(Transaction {
+                                                    account_id: id,
+                                                    occured_at: Utc::now(),
+                                                    description: desc.into(),
+                                                    amount,
+                                                });
+                                                cx.notify();
+                                            }
                                         }
                                     }
                                 })
@@ -171,15 +168,18 @@ fn render_accts(page: &AccountsPage, cx: &mut Context<AccountsPage>) -> Div {
     });
 
     match records {
-        Some(Ok(records)) => {
+        Some(Ok(records)) => div().size_full().child(
             column()
+                .id("acct-list-container")
+                .size_full()
                 .child(row().gap_1().child("Name"))
                 .children(records.into_iter().map(|record| {
-                    let (background, foreground) = if record.id == page.selected_acct_id {
-                        (cx.theme().accent, cx.theme().accent_foreground)
-                    } else {
-                        (cx.theme().background, cx.theme().foreground)
-                    };
+                    let (background, foreground) =
+                        if record.id == page.selected_acct_id.unwrap_or(0) {
+                            (cx.theme().accent, cx.theme().accent_foreground)
+                        } else {
+                            (cx.theme().background, cx.theme().foreground)
+                        };
 
                     row()
                         .id(format!("acct_row_{}", record.id))
@@ -188,35 +188,44 @@ fn render_accts(page: &AccountsPage, cx: &mut Context<AccountsPage>) -> Div {
                         .gap_1()
                         .child(record.item.display_name)
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.selected_acct_id = record.id;
+                            cx.stop_propagation();
+                            this.selected_acct_id = Some(record.id);
                             cx.notify();
                         }))
                 }))
-        }
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.selected_acct_id = None;
+                    cx.notify();
+                })),
+        ),
         Some(Err(err)) => div().child(format!("Something went wrong: {err}")),
         None => div().child("Please create/open a file first..."),
     }
 }
 
 fn render_trans(view: &AccountsPage, cx: &mut App) -> Div {
-    let records = view.state.update(cx, |state, _| {
-        state
-            .document
-            .as_mut()
-            .map(|doc| doc.get_acct_trans(view.selected_acct_id))
-    });
+    if let Some(acct_id) = view.selected_acct_id {
+        let records = view.state.update(cx, |state, _| {
+            state
+                .document
+                .as_mut()
+                .map(|doc| doc.get_acct_trans(acct_id))
+        });
 
-    match records {
-        Some(Ok(records)) => column()
-            .child(row().gap_1().child("Description").child("Amount"))
-            .children(records.iter().map(|record| {
-                let trans = &record.item;
-                row()
-                    .gap_1()
-                    .child(trans.description.clone())
-                    .child(trans.amount.to_string())
-            })),
-        Some(Err(err)) => div().child(format!("Something went wrong: {err}")),
-        None => div().child("Please create/open a file first..."),
+        match records {
+            Some(Ok(records)) => column()
+                .child(row().gap_1().child("Description").child("Amount"))
+                .children(records.iter().map(|record| {
+                    let trans = &record.item;
+                    row()
+                        .gap_1()
+                        .child(trans.description.clone())
+                        .child(trans.amount.to_string())
+                })),
+            Some(Err(err)) => div().child(format!("Something went wrong: {err}")),
+            None => div().child("Please create/open a file first..."),
+        }
+    } else {
+        div().child("Please select an account...")
     }
 }
