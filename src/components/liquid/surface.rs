@@ -1,8 +1,8 @@
 use std::f32::consts::FRAC_PI_2;
 
 use gpui::{
-    Bounds, ContentMask, IntoElement, Path, PathBuilder, Pixels, Point, RenderOnce, Rgba, Window,
-    canvas, linear_color_stop, linear_gradient, point, px, rgba, size,
+    AnyElement, Bounds, ContentMask, IntoElement, Path, PathBuilder, Pixels, Point, RenderOnce,
+    Rgba, Window, canvas, linear_color_stop, linear_gradient, point, px, rgb, rgba, size,
 };
 use gpui_kit::{
     ParentElement, Styled, div,
@@ -14,14 +14,16 @@ pub struct LiquidSurface {
     tint: Rgba,
     radius: f32,
     highlight_distance: f32,
+    children: Vec<AnyElement>,
 }
 
 impl LiquidSurface {
     pub fn new() -> Self {
         Self {
-            tint: rgba(0xF8F8F880),
+            tint: rgb(0xF8F8F8),
             radius: 24.0,
             highlight_distance: 0.2,
+            children: Vec::new(),
         }
     }
 
@@ -44,20 +46,23 @@ impl LiquidSurface {
     }
 }
 
+impl ParentElement for LiquidSurface {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
 impl RenderOnce for LiquidSurface {
     fn render(self, _: &mut Window, _: &mut gpui::App) -> impl IntoElement {
         div()
-            .p_1()
             .relative()
             .child(
                 canvas(
                     |_, _, _| (),
                     move |bounds, (), window, _| {
                         let radius = px(self.radius);
-                        if let Ok(fill) = fill_squircle(radius, bounds) {
-                            window.paint_path(fill, self.tint);
-                        }
-                        draw_base_border(bounds, window, radius);
+                        draw_tint(bounds, window, self.tint, radius);
+                        draw_border(bounds, window, radius);
                         draw_highlight(bounds, window, radius);
                     },
                 )
@@ -66,12 +71,19 @@ impl RenderOnce for LiquidSurface {
                 .left_0()
                 .size_full(),
             )
-            .child("Hello World")
-        // .text_color(rgb(0xFFFFFF))
+            .children(self.children)
     }
 }
 
-fn draw_base_border(bounds: Bounds<Pixels>, window: &mut Window, radius: Pixels) {
+fn draw_tint(bounds: Bounds<Pixels>, window: &mut Window, mut tint: Rgba, radius: Pixels) {
+    tint.a = 0.4;
+
+    if let Ok(fill) = fill_squircle(radius, bounds) {
+        window.paint_path(fill, tint);
+    }
+}
+
+fn draw_border(bounds: Bounds<Pixels>, window: &mut Window, radius: Pixels) {
     if let Ok(outline) = stroke_squircle(radius, px(1.0), bounds) {
         let peak = rgba(0x42424240);
         let fade = rgba(0x42424214);

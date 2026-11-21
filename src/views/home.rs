@@ -1,6 +1,8 @@
-use crate::components::liquid::surface::LiquidSurface;
+use crate::components::liquid::LiquidSurface;
+use crate::components::liquid::button::LiquidButton;
 
 use chrono::Utc;
+use gpui::rgba;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::empty::{
@@ -102,27 +104,38 @@ fn render_main(view: &mut PitakaView, cx: &mut Context<PitakaView>) -> Div {
         .child(
             column()
                 .gap_2()
-                .p_4()
-                .w(px(320.))
-                .child(LiquidSurface::new())
-                .child(Input::new(&view.acct_dname_ipt).cleanable(true))
                 .child(
-                    Button::new("add-acct-btn")
-                        .primary()
-                        .label("Add Account")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.state.update(cx, |state, cx| {
-                                if let Some(doc) = &mut state.document {
-                                    let dname = this.acct_dname_ipt.read(cx).value();
-                                    doc.accounts.add(Account {
-                                        display_name: dname.into(),
-                                    });
-                                    cx.notify();
-                                }
-                            })
-                        })),
+                    row().p_2().justify_end().child(
+                        LiquidButton::new("liquid-add-button")
+                            .icon(Icon::new(IconName::Plus).size(px(20.0))),
+                    ),
                 )
-                .child(render_accts(view, cx)),
+                .child(
+                    column()
+                        .gap_2()
+                        .p_4()
+                        .child(Input::new(&view.acct_dname_ipt).cleanable(true))
+                        .child(
+                            Button::new("add-acct-btn")
+                                .primary()
+                                .label("Add Account")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.state.update(cx, |state, cx| {
+                                        if let Some(doc) = &mut state.document {
+                                            let dname = this.acct_dname_ipt.read(cx).value();
+                                            doc.accounts.add(Account {
+                                                display_name: dname.into(),
+                                            });
+                                            cx.notify();
+                                        }
+                                    })
+                                })),
+                        )
+                        .child(render_accts(view, cx)),
+                )
+                .w(px(320.))
+                .border_r_1()
+                .border_color(rgba(0x42424240)),
         )
         .child(
             column()
