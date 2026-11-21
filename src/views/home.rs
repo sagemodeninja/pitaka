@@ -1,3 +1,5 @@
+use crate::components::liquid::surface::LiquidSurface;
+
 use chrono::Utc;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -102,6 +104,7 @@ fn render_main(view: &mut PitakaView, cx: &mut Context<PitakaView>) -> Div {
                 .gap_2()
                 .p_4()
                 .w(px(320.))
+                .child(LiquidSurface::new())
                 .child(Input::new(&view.acct_dname_ipt).cleanable(true))
                 .child(
                     Button::new("add-acct-btn")
