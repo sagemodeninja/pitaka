@@ -16,17 +16,11 @@ pub struct PitakaVault {
 }
 
 impl PitakaVault {
-    // SEE: /docs/develop/file_layout.md
     pub fn create(name: impl Into<String>, path: &PathBuf) -> io::Result<Self> {
         let mut file = open_file(path, true)?;
 
         let mut header = PitakaVaultHeader::new(name);
-        let mut collections = RootCollection::empty();
-
-        #[rustfmt::skip]
-        collections
-            .add::<Account>()
-            .add::<Transaction>();
+        let mut collections = RootCollection::create();
 
         // Write to file...
         header.write_to_file(&mut file)?;
@@ -40,8 +34,19 @@ impl PitakaVault {
     }
 
     pub fn open(path: &PathBuf) -> io::Result<Self> {
-        let file = open_file(path, false)?;
-        read_vault(file)
+        let mut file = open_file(path, false)?;
+
+        let header = PitakaVaultHeader::read_from_file(&mut file)?;
+        header.validate()?;
+
+        // Collection discovery...
+        let collections = RootCollection::read_from_file(&mut file)?;
+
+        Ok(PitakaVault {
+            file,
+            header,
+            collections,
+        })
     }
 
     pub fn display_name(&self) -> &String {
@@ -92,25 +97,4 @@ fn open_file(path: &PathBuf, truncate: bool) -> io::Result<File> {
         .create(true)
         .truncate(truncate)
         .open(path)
-}
-
-// SEE: /docs/develop/file_layout.md
-fn read_vault(mut file: File) -> io::Result<PitakaVault> {
-    let header = PitakaVaultHeader::read_from_file(&mut file)?;
-
-    header.validate()?;
-
-    // Collection discovery...
-    let collections = RootCollection::read_from_file(&mut file)?;
-
-    // TODO: Reimplement...
-    // transactions.add_index("acct_id", |trans| trans.account_id.into());
-    // accounts.build_indexes(&mut file)?;
-    // transactions.build_indexes(&mut file)?;
-
-    Ok(PitakaVault {
-        file,
-        header,
-        collections,
-    })
 }

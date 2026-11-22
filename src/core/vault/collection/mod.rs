@@ -2,7 +2,6 @@ mod account;
 mod directory;
 mod header;
 mod index;
-mod managed;
 mod query;
 mod record;
 mod root;
@@ -10,7 +9,6 @@ mod transaction;
 
 pub use account::*;
 pub use header::*;
-pub use managed::*;
 pub use record::*;
 pub use root::*;
 pub use transaction::*;
@@ -30,8 +28,6 @@ use crate::utils::extensions::file::{
 };
 use crate::utils::file::FileHandle;
 
-const COLLECTION_SIZE: u64 = 40;
-
 pub struct Collection<T: RecordPayload> {
     header: CollectionHeader,
 
@@ -44,10 +40,6 @@ pub struct Collection<T: RecordPayload> {
 
 pub trait CollectionType: RecordPayload {
     fn c_type() -> u8;
-}
-
-pub trait CollectionHandle: FileHandle {
-    fn header(&self) -> &CollectionHeader;
 }
 
 impl<T: RecordPayload> Collection<T> {
@@ -279,11 +271,5 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
         self.tracked_updates.clear();
 
         Ok(())
-    }
-}
-
-impl<T: RecordPayload> CollectionHandle for Collection<T> {
-    fn header(&self) -> &CollectionHeader {
-        &self.header
     }
 }

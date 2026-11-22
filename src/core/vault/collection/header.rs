@@ -3,7 +3,10 @@ use std::{
     io::{self, Seek},
 };
 
+use super::{CollectionType, RecordPayload};
 use crate::utils::{extensions::file::*, file::FileHandle};
+
+pub const HEADER_SIZE: u64 = 40;
 
 const RESERVED_SIZE: usize = 7;
 
@@ -28,6 +31,16 @@ impl CollectionHeader {
             o_last_record: 0,
             position,
         }
+    }
+
+    pub fn from_type<T: CollectionType>(position: u64) -> Self {
+        Self::new(T::c_type(), position)
+    }
+}
+
+impl RecordPayload for CollectionHeader {
+    fn size(&self) -> u32 {
+        HEADER_SIZE as u32
     }
 }
 

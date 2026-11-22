@@ -5,7 +5,6 @@ use crate::utils::file::FileHandle;
 
 pub trait FileCursorExtensions {
     fn move_to(&mut self, pos: u64) -> Result<u64>;
-    fn move_for(&mut self, steps: i64) -> Result<u64>;
 }
 
 pub trait FileReadExtensions {
@@ -38,10 +37,6 @@ pub trait FileWriteExtensions {
 impl FileCursorExtensions for File {
     fn move_to(&mut self, pos: u64) -> Result<u64> {
         self.seek(SeekFrom::Start(pos))
-    }
-
-    fn move_for(&mut self, steps: i64) -> Result<u64> {
-        self.seek(SeekFrom::Current(steps))
     }
 }
 

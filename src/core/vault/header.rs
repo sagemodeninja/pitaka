@@ -10,6 +10,8 @@ use crate::utils::{
     file::FileHandle,
 };
 
+pub const HEADER_SIZE: u64 = 80;
+
 const MAGIC_NUMBER: [u8; 4] = *b"PTKA";
 const CURRENT_FORMAT_VERSION: u16 = 1;
 

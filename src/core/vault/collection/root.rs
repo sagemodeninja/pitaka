@@ -1,47 +1,49 @@
 use std::fs::File;
 use std::io;
 
-use super::{
-    Account, Collection, CollectionHeader, CollectionType, ManagedCollection, Transaction,
-};
+use super::Transaction;
+use super::{Account, Collection, CollectionHeader, CollectionType};
+use crate::core::vault;
 use crate::utils::{
     extensions::file::{FileCursorExtensions, FileWriteExtensions},
     file::FileHandle,
 };
 
-const HEADER_SIZE: u64 = 80;
 const COLLECTION_SIZE: u64 = 40;
+const HEADER_OFFSET: u64 = vault::header::HEADER_SIZE;
 
 pub struct RootCollection {
-    collection: Collection<ManagedCollection>,
+    headers: Collection<CollectionHeader>,
     accounts: Option<Collection<Account>>,
     transactions: Option<Collection<Transaction>>,
 }
 
 impl RootCollection {
-    pub fn new(mut collection: Collection<ManagedCollection>) -> Self {
-        collection.add_index("collection_type", |collection| {
-            collection.header().c_type.into()
-        });
+    pub fn new(mut headers: Collection<CollectionHeader>) -> Self {
+        headers.add_index("collection_type", |collection| collection.c_type.into());
 
         Self {
-            collection,
+            headers,
             accounts: None,
             transactions: None,
         }
     }
 
-    pub fn empty() -> Self {
-        let header = CollectionHeader::new(0, HEADER_SIZE);
-        Self::new(Collection::new(header))
+    pub fn create() -> Self {
+        let header = CollectionHeader::new(0, HEADER_OFFSET);
+        let mut this = Self::new(Collection::new(header));
+
+        #[rustfmt::skip]
+        this
+            .add::<Account>()
+            .add::<Transaction>();
+
+        this
     }
 
-    pub fn add<T: CollectionType + 'static>(&mut self) -> &mut Self {
-        let header = CollectionHeader::new(T::c_type(), 0);
-
-        let collection = Collection::<T>::new(header);
-        self.collection.add(ManagedCollection::new(collection));
-
+    pub fn add<T: CollectionType>(&mut self) -> &mut Self {
+        let header = CollectionHeader::from_type::<T>(0);
+        self.headers.add(header);
         self
     }
 
@@ -69,12 +71,12 @@ impl RootCollection {
             .expect("transactions cache is initialized"))
     }
 
-    fn load_collection<T: CollectionType + 'static>(
+    fn load_collection<T: CollectionType>(
         &mut self,
         file: &mut File,
         configure: impl FnOnce(&mut Collection<T>),
     ) -> io::Result<Collection<T>> {
-        let header = self.get_c_header::<T>(file)?;
+        let header = self.get_header::<T>(file)?;
         let mut collection = Collection::new(header);
 
         configure(&mut collection);
@@ -83,25 +85,20 @@ impl RootCollection {
         Ok(collection)
     }
 
-    fn get_c_header<T: CollectionType + 'static>(
-        &mut self,
-        file: &mut File,
-    ) -> io::Result<CollectionHeader> {
+    fn get_header<T: CollectionType>(&mut self, file: &mut File) -> io::Result<CollectionHeader> {
         let result = self
-            .collection
+            .headers
             .query(file)
             .filter_indexed("collection_type", T::c_type().into())
             .take(1)
             .collect()?;
 
         if let Some(record) = result.first() {
-            return Ok(*record.item.header());
+            return Ok(record.item);
         }
 
-        let header = CollectionHeader::new(T::c_type(), 0);
-        let collection = ManagedCollection::new(Collection::<T>::new(header));
-        let header = *collection.header();
-        self.collection.add(collection);
+        let header = CollectionHeader::from_type::<T>(0);
+        self.headers.add(header);
 
         Ok(header)
     }
@@ -109,21 +106,21 @@ impl RootCollection {
 
 impl FileHandle for RootCollection {
     fn read_from_file(file: &mut File) -> io::Result<Self> {
-        file.move_to(HEADER_SIZE)?;
+        file.move_to(HEADER_OFFSET)?;
 
         let collection = Collection::read_from_file(file)?;
         let mut root = Self::new(collection);
 
-        root.collection.build_indexes(file)?;
+        root.headers.build_indexes(file)?;
         Ok(root)
     }
 
     fn write_to_file(&mut self, file: &mut File) -> io::Result<()> {
-        file.move_to(HEADER_SIZE)?;
+        file.move_to(HEADER_OFFSET)?;
 
         // Reserve the header...
         file.write_zeros(COLLECTION_SIZE as usize)?;
 
-        self.collection.write_to_file(file)
+        self.headers.write_to_file(file)
     }
 }
