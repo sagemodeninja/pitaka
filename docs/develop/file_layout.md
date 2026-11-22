@@ -2,6 +2,8 @@
 
 # File Layout
 
+This acts as both official documentation and devlogs.
+
 > **Warning:** This format is unstable. Any update may make existing saves unreadable. No migration or recovery tools are provided, and compatibility fixes are not planned at this point of the development.
 
 ## Contents
@@ -14,6 +16,7 @@
   - [Transaction Payload](#transaction-payload)
 - [Structures](#structures)
   - [Length-Prefixed String](#length-prefixed-string)
+- [Devlogs](#devlogs)
 
 ## Format Rules
 
@@ -126,3 +129,33 @@ Size: `4 + N` bytes. Maximum data length: `u32::MAX` bytes.
 ---
 
 > **Planned:** a free-space collection will track deleted regions for reuse or compaction.
+
+## Devlogs
+
+The record deletion timeline covers the design through implementation. See [Findings](findings.md#tracked-findings) for save correctness and retry status.
+
+<details>
+<summary><strong>Nov. 22, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 10:45 AM +08:00 | Moved pending-state cleanup and the cached count update after successful collection header writes. A retry after partial file changes remains an open issue. |
+| 10:35 AM +08:00 | Corrected cancellation of pending creates and updated collection endpoints during unlinking. The follow-up changed append to check the post-delete count and refreshed the in-memory count for subsequent successful saves. |
+| 10:32 AM +08:00 | Added basic deletion. The collection removes the directory entry immediately and save patches the neighboring links for persisted records. The removed record's bytes stay in the file, and new records still append at EOF. Space reclamation remains future work. |
+| 09:01 AM +08:00 | Chose to remove entries from the sorted directory vector and accept the shift cost. Deferred tombstones and deep-page optimization. |
+| 08:56 AM +08:00 | Explored sorted tombstone positions to translate a live-record skip into a raw offset. Indexed queries would need positions within each bucket. Maintaining the sorted positions could still shift entries in the smaller vector. |
+| 08:01 AM +08:00 | Considered tombstones to avoid shifting the directory. Full scans could filter them in either direction, and indexed lookups could return `None` before pagination. Moving only `take` after lookup can fill a page while still repeating records across pages because `skip` counts stale IDs. Filtering first preserves page boundaries but costs a lookup per skipped candidate. Clean index buckets would allow direct slicing, and an ID cursor could support sequential pages. |
+| 07:56 AM +08:00 | Proposed removing the directory entry and storing the disk offset in the delete delta. For an unsaved record, cancel the pending create and remove the tracked payload. |
+
+</details>
+
+<details>
+<summary><strong>Nov. 21, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 12:06 AM +08:00 | Flagged that pending deletions must be excluded before pagination. In a directory backed by an ordered vector and an ID-to-position map, removal would require updating later positions or retaining tombstones and filtering them before pagination. |
+
+</details>

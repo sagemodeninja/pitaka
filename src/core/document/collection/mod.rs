@@ -14,7 +14,7 @@ use std::fs::File;
 use std::io::{self, Seek};
 use std::os::unix::fs::MetadataExt;
 
-use crate::core::document::collection::delta::RecordDelta;
+use crate::core::document::collection::delta::RecordDelta::{self, Create, Delete};
 use crate::core::document::collection::directory::RecordDirectory;
 use crate::core::document::collection::index::{CollectionIndexBuilder, IndexValue};
 use crate::core::document::collection::location::RecordLocation::{self, InMemory, OnDisk};
@@ -40,7 +40,7 @@ pub struct Collection<T: RecordPayload> {
 
     directory: RecordDirectory,
     indexes: CollectionIndexBuilder<T>,
-    updates: Vec<RecordDelta>,
+    updates: Vec<(u64, RecordDelta)>,
     tracked: HashMap<u64, Record<T>>,
 }
 
@@ -178,10 +178,26 @@ impl<T: RecordPayload> Collection<T> {
 
         self.directory.insert(id, InMemory);
         self.indexes.insert(&record);
-        self.updates.push(RecordDelta::Create(id));
+        self.updates.push((id, RecordDelta::Create(id)));
         self.tracked.insert(id, record);
 
         self.next_id += 1;
+    }
+
+    pub fn delete(&mut self, id: u64) {
+        if let Some((index, (_, location))) = self.directory.get_with_index(&id) {
+            match location {
+                OnDisk(offset) => {
+                    self.updates.push((id, Delete(*offset)));
+                }
+                InMemory => {
+                    self.updates.retain(|(target_id, _)| *target_id != id);
+                }
+            }
+
+            self.tracked.remove(&id);
+            self.directory.remove(index);
+        }
     }
 }
 
@@ -191,23 +207,51 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
     }
 
     fn write_to_file(&mut self, file: &mut File) -> io::Result<()> {
-        let for_append: Vec<u64> = self
-            .updates
-            .iter()
-            .filter_map(|delta| match delta {
-                RecordDelta::Create(id) => Some(*id),
-                _ => None,
-            })
-            .collect();
+        let mut for_append: Vec<u64> = vec![];
+        let mut for_remove: Vec<u64> = vec![];
+
+        for (_, delta) in self.updates.iter() {
+            match delta {
+                Create(id) => for_append.push(*id),
+                Delete(offset) => for_remove.push(*offset),
+                _ => {}
+            }
+        }
 
         let append_len = for_append.len() as u64;
-        let record_cnt = self.record_count + append_len;
+        let remove_len = for_remove.len() as u64;
+        let record_cnt = self.record_count + append_len - remove_len;
 
+        // Perform deletions...
+        for d_offset in for_remove {
+            file.move_to(d_offset)?;
+
+            let o_prev = file.read_le_u64()?;
+            let o_next = file.read_le_u64()?;
+
+            if o_prev != 0 {
+                file.move_to(o_prev + 8)?;
+                file.write_le_u64(o_next)?;
+            } else {
+                self.o_first_record = o_next;
+            }
+
+            if o_next != 0 {
+                file.move_to(o_next)?;
+                file.write_le_u64(o_prev)?;
+            } else {
+                self.o_last_record = o_prev;
+            }
+
+            // TODO: What happens to the current record?
+        }
+
+        // Append new records...
         if append_len > 0 {
             let mut o_prev = self.o_last_record;
             let mut o_next = file.metadata()?.size();
 
-            if self.record_count == 0 {
+            if self.record_count - remove_len == 0 {
                 self.o_first_record = o_next;
             } else {
                 file.move_to(self.o_last_record + 8)?;
@@ -245,9 +289,6 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
             }
         }
 
-        self.updates.clear();
-        self.tracked.clear();
-
         // Update collection header...
         file.move_to(self.position)?;
         file.write_le_u64(self.o_next_collection)?;
@@ -256,6 +297,10 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
         file.write_le_u64(record_cnt)?;
         file.write_le_u64(self.o_first_record)?;
         file.write_le_u64(self.o_last_record)?;
+
+        self.record_count = record_cnt;
+        self.updates.clear();
+        self.tracked.clear();
 
         Ok(())
     }

@@ -33,6 +33,11 @@ impl RecordDirectory {
         Some(&self.directory[index])
     }
 
+    pub fn get_with_index(&self, id: &u64) -> Option<(usize, &Entry)> {
+        let index = self.index_of(id)?;
+        Some((index, &self.directory[index]))
+    }
+
     pub fn insert(&mut self, id: u64, loc: RecordLocation) {
         self.directory.push((id, loc));
     }
@@ -45,5 +50,9 @@ impl RecordDirectory {
             }
             None => Err(RecordDirectoryError::Update(id)),
         }
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        self.directory.remove(index);
     }
 }

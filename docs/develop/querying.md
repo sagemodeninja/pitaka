@@ -45,13 +45,15 @@ AND queries could intersect candidate offsets or use one index to find candidate
 
 ## Devlogs
 
+See the [record deletion timeline](file_layout.md#devlogs) for the discussion of deletion and pagination.
+
 <details>
 <summary><strong>Nov. 21, 2026</strong></summary>
 <br>
 
 | Time | Logs |
 | --- | --- |
-| 12:06 AM +08:00 | The current query avoids collecting and sorting IDs for unfiltered queries and cloning the index bucket for indexed queries. Indexed queries currently resolve directory entries before pagination, so skipped candidates still cost lookups. Paginating the borrowed IDs first would limit lookups to the page if the bucket contains only visible records with valid directory entries. Flagged pending deletions as a query design concern. If a deleted record still appears in an index bucket or the directory before save, it can appear in results or consume a pagination slot. Decide how indexed and unfiltered queries exclude pending deletions before `skip` and `take`, especially if indexed queries paginate IDs before resolving their locations. Considered a hybrid directory with an ordered vector of entries and a map from ID to vector position. Appends and in-place locator changes preserve existing positions. Removing an entry from the vector shifts later positions, so deletion would require updating the map or retaining a tombstone and excluding it before pagination. The hybrid trades additional memory for expected constant-time ID lookup. |
+| 12:06 AM +08:00 | The query avoids collecting and sorting IDs for unfiltered queries and cloning the index bucket for indexed queries. Indexed queries resolve directory entries before pagination, so skipped candidates still cost lookups. Considered a hybrid directory with an ordered vector and an ID-to-position map for expected constant-time lookup at the cost of additional memory. Appends and in-place locator changes preserve existing positions. |
 
 </details>
 

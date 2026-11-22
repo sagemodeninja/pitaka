@@ -114,8 +114,14 @@ impl Render for AccountsPage {
                                     .label("Delete")
                                     .disabled(self.selected_acct_id.is_none())
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.acct_form_visible = false;
-                                        cx.notify();
+                                        if let Some(id) = this.selected_acct_id {
+                                            this.state.update(cx, |state, cx| {
+                                                if let Some(doc) = &mut state.document {
+                                                    doc.accounts.delete(id);
+                                                    cx.notify();
+                                                }
+                                            });
+                                        };
                                     })),
                             ),
                     )
