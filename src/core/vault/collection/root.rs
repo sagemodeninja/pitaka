@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 
 use super::Transaction;
 use super::{Account, Collection, CollectionHeader, CollectionType};
 use crate::core::vault;
+use crate::core::vault::collection::AnyCollection;
 use crate::utils::{
     extensions::file::{FileCursorExtensions, FileWriteExtensions},
     file::FileHandle,
@@ -16,6 +18,7 @@ pub struct RootCollection {
     headers: Collection<CollectionHeader>,
     accounts: Option<Collection<Account>>,
     transactions: Option<Collection<Transaction>>,
+    collections: HashMap<u8, AnyCollection>,
 }
 
 impl RootCollection {
@@ -26,6 +29,7 @@ impl RootCollection {
             headers,
             accounts: None,
             transactions: None,
+            collections: HashMap::new(),
         }
     }
 
@@ -45,6 +49,25 @@ impl RootCollection {
         let header = CollectionHeader::from_type::<T>(0);
         self.headers.add(header);
         self
+    }
+
+    pub fn get<T: CollectionType + 'static>(
+        &mut self,
+        file: &mut File,
+    ) -> io::Result<&mut Collection<T>> {
+        let c_type = T::c_type();
+
+        if !self.collections.contains_key(&c_type) {
+            let collection = self.load_collection_2::<T>(file)?;
+            self.collections
+                .insert(c_type, AnyCollection::new(collection));
+        }
+
+        Ok(self
+            .collections
+            .get_mut(&c_type)
+            .and_then(|collection| collection.downcast_mut::<T>())
+            .expect("cache is initialized"))
     }
 
     pub fn accounts(&mut self, file: &mut File) -> io::Result<&mut Collection<Account>> {
@@ -80,6 +103,17 @@ impl RootCollection {
         let mut collection = Collection::new(header);
 
         configure(&mut collection);
+
+        collection.build_indexes(file)?;
+        Ok(collection)
+    }
+
+    fn load_collection_2<T: CollectionType>(
+        &mut self,
+        file: &mut File,
+    ) -> io::Result<Collection<T>> {
+        let header = self.get_header::<T>(file)?;
+        let mut collection = Collection::new(header);
 
         collection.build_indexes(file)?;
         Ok(collection)

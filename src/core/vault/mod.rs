@@ -54,7 +54,7 @@ impl PitakaVault {
     }
 
     pub fn accounts(&mut self) -> io::Result<&mut Collection<Account>> {
-        self.collections.accounts(&mut self.file)
+        self.collections.get::<Account>(&mut self.file)
     }
 
     pub fn transactions(&mut self) -> io::Result<&mut Collection<Transaction>> {

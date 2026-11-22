@@ -13,6 +13,7 @@ pub use record::*;
 pub use root::*;
 pub use transaction::*;
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self};
@@ -40,6 +41,28 @@ pub struct Collection<T: RecordPayload> {
 
 pub trait CollectionType: RecordPayload {
     fn c_type() -> u8;
+}
+
+pub trait CollectionObject {
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<T: RecordPayload + 'static> CollectionObject for Collection<T> {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+pub struct AnyCollection(Box<dyn CollectionObject>);
+
+impl AnyCollection {
+    pub fn new<T: RecordPayload + 'static>(collection: Collection<T>) -> Self {
+        Self(Box::new(collection))
+    }
+
+    pub fn downcast_mut<T: RecordPayload + 'static>(&mut self) -> Option<&mut Collection<T>> {
+        self.0.as_any_mut().downcast_mut::<Collection<T>>()
+    }
 }
 
 impl<T: RecordPayload> Collection<T> {
