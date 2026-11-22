@@ -11,9 +11,12 @@ This acts as both official documentation and devlogs.
 - [Format Rules](#format-rules)
 - [File Header](#file-header)
 - [Collections](#collections)
+  - [Root Collection](#root-collection)
+  - [Managed Collections](#managed-collections)
 - [Records](#records)
-  - [Account Payload](#account-payload)
-  - [Transaction Payload](#transaction-payload)
+  - [Root Collection](#root-collection-payload)
+  - [Account](#account-payload)
+  - [Transaction](#transaction-payload)
 - [Structures](#structures)
   - [Length-Prefixed String](#length-prefixed-string)
 - [Devlogs](#devlogs)
@@ -31,49 +34,72 @@ This acts as both official documentation and devlogs.
 
 ## File Header
 
-16 bytes at the start of the file.
+80 bytes at the start of the file.
 
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
 | 0 | 4 | Magic bytes | `[u8; 4]` | `b"PTKA"`. |
 | 4 | 2 | Format version | `u16` | Reject unsupported versions. |
-| 6 | 10 | Reserved | `[u8; 10]` | Future header fields. |
+| 6 | 68 | Display name | `u32` + `[u8; 64]` | Document name shown in the UI. The prefix stores the name's length in UTF-8 bytes, up to 64. Zero-pad the unused bytes in the field. |
+| 74 | 6 | Reserved | `[u8; 6]` | Future header fields. |
 
 ## Collections
 
-Collections form a singly linked list of 48-byte headers, including 7 reserved bytes for future fields. The first header starts at file offset `16`.
+A collection is a table with a 40-byte header. The root collection and managed collections share this header layout.
 
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
-| 0 | 8 | Next collection offset | `u64` | Next collection header. |
-| 8 | 1 | Record type | `u8` | Record type identifier. |
+| 0 | 1 | Collection type | `u8` | The type of collection. `0` = `Root Collection`. |
+| 1 | 8 | Record count | `u64` | Persisted record count. |
 | 9 | 8 | Next record ID | `u64` | Next record ID; never reduced when records are deleted. |
-| 17 | 8 | Record count | `u64` | Persisted record count. |
-| 25 | 8 | First record offset | `u64` | First record. |
-| 33 | 8 | Last record offset | `u64` | Last record. |
-| 41 | 7 | Reserved | `[u8; 7]` | Future header fields. |
+| 17 | 8 | First record offset | `u64` | First record. |
+| 25 | 8 | Last record offset | `u64` | Last record. |
+| 33 | 7 | Reserved | `[u8; 7]` | Future header fields. |
 
 > Empty collections have a zero count and zero record offsets. A single-record collection has matching first and last offsets.
 
+### Root Collection
+
+The root collection catalogs [managed collections](#managed-collections). Its header starts at file offset `80`, immediately after the file header, and has collection type `0`. Each root record stores a managed collection header as its payload.
+
+### Managed Collections
+
+Managed collections hold application data such as accounts and transactions. The header's `CollectionType` identifies the kind of records the collection holds and determines how to decode their payloads. Its first and last record offsets point to the managed collection's own records.
+
+The document uses the root catalog to locate managed collection headers. At the document level, `doc.transactions` resolves the transactions collection by `CollectionType` through the root catalog.
+
 ## Records
 
-A 40-byte record header contains the links, record ID, and timestamps. Records form a doubly linked list.
+A 48-byte record header contains the record size, links, record ID, and timestamps. Records form a doubly linked list.
 
 | Offset | Size | Field | Type | Description |
 | --- | --- | --- | --- | --- |
-| 0 | 8 | Previous record offset | `u64` | Previous record. |
-| 8 | 8 | Next record offset | `u64` | Next record. |
-| 16 | 8 | ID | `u64` | Unique within the collection. |
-| 24 | 8 | Created at | `i64` | Timestamp when the record was created. |
-| 32 | 8 | Last modified at | `i64` | Timestamp when the record was last modified. |
-| 40 | Variable | Payload | Varies | See layouts below. |
+| 0 | 8 | Size | `u64` | Total record size in bytes, including the header and payload. |
+| 8 | 8 | Previous record offset | `u64` | Previous record. |
+| 16 | 8 | Next record offset | `u64` | Next record. |
+| 24 | 8 | ID | `u64` | Unique within the collection. |
+| 32 | 8 | Created at | `i64` | Timestamp when the record was created. |
+| 40 | 8 | Last modified at | `i64` | Timestamp when the record was last modified. |
+| 48 | Variable | Payload | Varies | See layouts below. |
 
-> Payload offset `0` is record offset `40`.
+> Payload offset `0` is record offset `48`.
+
+<a id="root-collection-payload"></a>
+
+<details>
+<summary><strong>Root Collection</strong></summary>
+<br>
+
+Each record in the [root collection](#root-collection) has a 40-byte payload using the [collection header layout](#collections). Its collection type identifies the managed collection.
+
+> The full root record is 88 bytes.
+
+</details>
 
 <a id="account-payload"></a>
 
 <details>
-<summary><strong>Account Payload</strong></summary>
+<summary><strong>Account</strong></summary>
 
 <br>
 
@@ -83,7 +109,7 @@ A place where money is held, such as a bank account, wallet, or piggy bank.
 | --- | --- | --- | --- | --- |
 | 0 | 4 + N | Display name | [Length-prefixed string](#length-prefixed-string) | Account name shown in the UI. |
 
-> The payload is `4 + N` bytes. The full record is `44 + N` bytes.
+> The payload is `4 + N` bytes. The full record is `52 + N` bytes.
 
 </details>
 
@@ -103,7 +129,7 @@ Represents the movement of money.
 | 16 | 8 | Amount | `i64` | Signed amount in centavos. |
 | 24 | 4 + N | Description | [Length-prefixed string](#length-prefixed-string) | Transaction description. |
 
-> The payload is `28 + N` bytes. The full record is `68 + N` bytes.
+> The payload is `28 + N` bytes. The full record is `76 + N` bytes.
 
 </details>
 
@@ -132,7 +158,7 @@ Size: `4 + N` bytes. Maximum data length: `u32::MAX` bytes.
 
 ## Devlogs
 
-The record deletion timeline covers the design through implementation. See [Findings](findings.md#tracked-findings) for save correctness and retry status.
+See [Findings](findings.md#tracked-findings) for save correctness and retry status.
 
 <details>
 <summary><strong>Nov. 22, 2026</strong></summary>
@@ -140,6 +166,11 @@ The record deletion timeline covers the design through implementation. See [Find
 
 | Time | Logs |
 | --- | --- |
+| 12:06 PM +08:00 | Added a total-size field at the start of each record, extending the record header to 48 bytes. |
+| 11:51 AM +08:00 | Defined the root record payload as the 40-byte managed collection header, stored directly in the record. |
+| 11:39 AM +08:00 | Specified the shared 40-byte collection header and removed the next-collection offset from the layout. Clarified that root records associate names with managed collection header offsets and that managed collections use their type to identify the record payload. The root catalog record encoding remains open. |
+| 11:32 AM +08:00 | Specified an 80-byte file header with a fixed 68-byte display-name field and six reserved bytes. The root collection starts immediately after it. |
+| 11:14 AM +08:00 | Drafted a fixed root catalog of named collections and movable typed collections. Reserved type value `0` for `Root` in the planned `CollectionType` enum and chose type-based lookup for `doc.transactions`. The root record encoding remains open. |
 | 10:45 AM +08:00 | Moved pending-state cleanup and the cached count update after successful collection header writes. A retry after partial file changes remains an open issue. |
 | 10:35 AM +08:00 | Corrected cancellation of pending creates and updated collection endpoints during unlinking. The follow-up changed append to check the post-delete count and refreshed the in-memory count for subsequent successful saves. |
 | 10:32 AM +08:00 | Added basic deletion. The collection removes the directory entry immediately and save patches the neighboring links for persisted records. The removed record's bytes stay in the file, and new records still append at EOF. Space reclamation remains future work. |
