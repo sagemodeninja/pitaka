@@ -2,7 +2,7 @@ mod error;
 
 use std::slice::Iter;
 
-use crate::core::document::collection::{
+use crate::core::vault::collection::{
     directory::error::RecordDirectoryError, location::RecordLocation,
 };
 

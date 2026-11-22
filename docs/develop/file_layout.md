@@ -166,7 +166,13 @@ See [Findings](findings.md#tracked-findings) for save correctness and retry stat
 
 | Time | Logs |
 | --- | --- |
+| 11:00 PM +08:00 | Traced the stored header position through vault creation and lazy loading. New root and missing managed collections can reach save with position zero. Proposed writing the root header before appending records and resolving managed header positions from persisted catalog entries. |
+| 10:40 PM +08:00 | Verified the root catalog in a local sample using 40-byte record headers without a size field. The embedded headers stayed empty after saving, and a detached transaction header occupied the account record header. |
+| 10:37 PM +08:00 | Implemented the managed collection payload writer, including the seven reserved header bytes. The first append briefly reserved header space before the original end-of-file append offset was restored. |
+| 10:34 PM +08:00 | Routed account creation and deletion and transaction creation through the vault's typed collection accessors. The accounts page logs collection load errors. |
+| 10:28 PM +08:00 | Added separate lazy account and transaction caches to the root collection. Both use a shared typed loader that builds indexes after registering collection-specific keys. The accessors return mutable references so the vault can write the cached collections. |
 | 12:06 PM +08:00 | Added a total-size field at the start of each record, extending the record header to 48 bytes. |
+| 04:06 PM +08:00 | Proposed keeping typed account and transaction collections in the vault while the root catalog handles on-disk discovery. If the vault needs an in-memory list of managed collections, use an enum that wraps each supported `Collection<T>` and expose typed accessors. |
 | 11:51 AM +08:00 | Defined the root record payload as the 40-byte managed collection header, stored directly in the record. |
 | 11:39 AM +08:00 | Specified the shared 40-byte collection header and removed the next-collection offset from the layout. Clarified that root records associate names with managed collection header offsets and that managed collections use their type to identify the record payload. The root catalog record encoding remains open. |
 | 11:32 AM +08:00 | Specified an 80-byte file header with a fixed 68-byte display-name field and six reserved bytes. The root collection starts immediately after it. |

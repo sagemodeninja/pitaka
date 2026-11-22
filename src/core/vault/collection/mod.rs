@@ -1,96 +1,66 @@
 mod account;
 mod directory;
+mod header;
 mod index;
+mod managed;
 mod query;
 mod record;
+mod root;
 mod transaction;
 
 pub use account::*;
+pub use header::*;
+pub use managed::*;
 pub use record::*;
+pub use root::*;
 pub use transaction::*;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, Seek};
+use std::io::{self};
 use std::os::unix::fs::MetadataExt;
 
-use crate::core::document::collection::delta::RecordDelta::{self, Create, Delete};
-use crate::core::document::collection::directory::RecordDirectory;
-use crate::core::document::collection::index::{CollectionIndexBuilder, IndexValue};
-use crate::core::document::collection::location::RecordLocation::{self, InMemory, OnDisk};
-use crate::core::document::collection::query::CollectionQueryBuilder;
+use crate::core::vault::collection::delta::RecordDelta::{self, Create, Delete};
+use crate::core::vault::collection::directory::RecordDirectory;
+use crate::core::vault::collection::index::{CollectionIndexBuilder, IndexValue};
+use crate::core::vault::collection::location::RecordLocation::{self, InMemory, OnDisk};
+use crate::core::vault::collection::query::CollectionQueryBuilder;
 use crate::utils::extensions::file::{
     FileCursorExtensions, FileReadExtensions, FileWriteExtensions,
 };
 use crate::utils::file::FileHandle;
 
-const COLLECTION_SIZE: u64 = 48;
-const FIRST_COLLECTION_OFFSET: u64 = 16;
-const INIT_COLLECTION_COUNT: u64 = 2;
+const COLLECTION_SIZE: u64 = 40;
 
 pub struct Collection<T: RecordPayload> {
-    pub position: u64,
-
-    pub o_next_collection: u64,
-    pub record_type: u8,
-    pub next_id: u64,
-    pub record_count: u64,
-    pub o_first_record: u64,
-    pub o_last_record: u64,
+    header: CollectionHeader,
 
     directory: RecordDirectory,
     indexes: CollectionIndexBuilder<T>,
     updates: Vec<(u64, RecordDelta)>,
-    tracked: HashMap<u64, Record<T>>,
+
+    tracked_updates: HashMap<u64, Record<T>>,
+}
+
+pub trait CollectionType: RecordPayload {
+    fn c_type() -> u8;
+}
+
+pub trait CollectionHandle: FileHandle {
+    fn header(&self) -> &CollectionHeader;
 }
 
 impl<T: RecordPayload> Collection<T> {
-    pub fn empty() -> Self {
+    pub fn new(header: CollectionHeader) -> Self {
         Self {
-            position: 0,
-
-            o_next_collection: 0,
-            record_type: T::record_type(),
-            next_id: 1,
-            record_count: 0,
-            o_first_record: 0,
-            o_last_record: 0,
+            header,
 
             directory: RecordDirectory::new(),
             indexes: CollectionIndexBuilder::new(),
             updates: Vec::new(),
-            tracked: HashMap::new(),
+
+            tracked_updates: HashMap::new(),
         }
-    }
-
-    pub fn create(file: &mut File) -> io::Result<Self> {
-        let mut collection = Self::empty();
-        let r_type = collection.record_type as u64;
-
-        collection.position = FIRST_COLLECTION_OFFSET + (r_type - 1) * COLLECTION_SIZE;
-        collection.o_next_collection = if r_type < INIT_COLLECTION_COUNT {
-            FIRST_COLLECTION_OFFSET + r_type * COLLECTION_SIZE
-        } else {
-            0
-        };
-
-        collection.write_to_file(file)?;
-        Ok(collection)
-    }
-
-    // See: /docs/develop/file_layout.md
-    pub fn read(&mut self, file: &mut File) -> io::Result<()> {
-        self.position = file.stream_position()?;
-
-        self.o_next_collection = file.read_le_u64()?;
-        self.record_type = file.read_le_u8()?;
-        self.next_id = file.read_le_u64()?;
-        self.record_count = file.read_le_u64()?;
-        self.o_first_record = file.read_le_u64()?;
-        self.o_last_record = file.read_le_u64()?;
-        // +7 reserved bytes.
-
-        Ok(())
     }
 
     pub fn add_index<'a>(
@@ -102,9 +72,10 @@ impl<T: RecordPayload> Collection<T> {
     }
 
     pub fn build_indexes(&mut self, file: &mut File) -> io::Result<()> {
-        let mut o_r_next = self.o_first_record;
+        let header = &self.header;
+        let mut o_r_next = header.o_first_record;
 
-        for _ in 0..self.record_count {
+        for _ in 0..header.record_count {
             file.move_to(o_r_next)?;
 
             let record = Record::<T>::read_from_file(file)?;
@@ -160,7 +131,7 @@ impl<T: RecordPayload> Collection<T> {
                         records.push(Record::<T>::read_from_file(file)?);
                     }
                     InMemory => {
-                        if let Some(item) = self.tracked.get(id) {
+                        if let Some(item) = self.tracked_updates.get(id) {
                             records.push(item.clone());
                         }
                     }
@@ -172,16 +143,17 @@ impl<T: RecordPayload> Collection<T> {
     }
 
     pub fn add(&mut self, item: T) {
-        let id = self.next_id;
+        let header = &mut self.header;
 
-        let record = Record::new(self.o_last_record, id, item);
+        let id = header.next_record_id;
+        let record = Record::new(header.o_last_record, id, item);
 
         self.directory.insert(id, InMemory);
         self.indexes.insert(&record);
         self.updates.push((id, RecordDelta::Create(id)));
-        self.tracked.insert(id, record);
+        self.tracked_updates.insert(id, record);
 
-        self.next_id += 1;
+        header.next_record_id += 1;
     }
 
     pub fn delete(&mut self, id: u64) {
@@ -195,18 +167,28 @@ impl<T: RecordPayload> Collection<T> {
                 }
             }
 
-            self.tracked.remove(&id);
+            self.tracked_updates.remove(&id);
             self.directory.remove(index);
         }
     }
 }
 
 impl<T: RecordPayload> FileHandle for Collection<T> {
-    fn read_from_file(_: &mut File) -> io::Result<Self> {
-        todo!()
+    fn read_from_file(file: &mut File) -> io::Result<Self> {
+        Ok(Self {
+            header: CollectionHeader::read_from_file(file)?,
+
+            directory: RecordDirectory::new(),
+            indexes: CollectionIndexBuilder::new(),
+            updates: Vec::new(),
+
+            tracked_updates: HashMap::new(),
+        })
     }
 
     fn write_to_file(&mut self, file: &mut File) -> io::Result<()> {
+        let header = &mut self.header;
+
         let mut for_append: Vec<u64> = vec![];
         let mut for_remove: Vec<u64> = vec![];
 
@@ -220,7 +202,7 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
         let append_len = for_append.len() as u64;
         let remove_len = for_remove.len() as u64;
-        let record_cnt = self.record_count + append_len - remove_len;
+        let record_cnt = header.record_count + append_len - remove_len;
 
         // Perform deletions...
         for d_offset in for_remove {
@@ -233,14 +215,14 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
                 file.move_to(o_prev + 8)?;
                 file.write_le_u64(o_next)?;
             } else {
-                self.o_first_record = o_next;
+                header.o_first_record = o_next;
             }
 
             if o_next != 0 {
                 file.move_to(o_next)?;
                 file.write_le_u64(o_prev)?;
             } else {
-                self.o_last_record = o_prev;
+                header.o_last_record = o_prev;
             }
 
             // TODO: What happens to the current record?
@@ -248,13 +230,13 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
         // Append new records...
         if append_len > 0 {
-            let mut o_prev = self.o_last_record;
+            let mut o_prev = header.o_last_record;
             let mut o_next = file.metadata()?.size();
 
-            if self.record_count - remove_len == 0 {
-                self.o_first_record = o_next;
+            if header.record_count - remove_len == 0 {
+                header.o_first_record = o_next;
             } else {
-                file.move_to(self.o_last_record + 8)?;
+                file.move_to(header.o_last_record + 8)?;
                 file.write_le_u64(o_next)?;
             }
 
@@ -263,11 +245,11 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
                 let is_last = index == append_len - 1;
 
                 if is_last {
-                    self.o_last_record = o_next;
+                    header.o_last_record = o_next;
                 }
 
                 let id = for_append[index as usize];
-                if let Some(record) = self.tracked.get_mut(&id) {
+                if let Some(record) = self.tracked_updates.get_mut(&id) {
                     let o_curr = o_next;
 
                     file.move_to(o_curr)?;
@@ -289,19 +271,19 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
             }
         }
 
-        // Update collection header...
-        file.move_to(self.position)?;
-        file.write_le_u64(self.o_next_collection)?;
-        file.write_le_u8(self.record_type)?;
-        file.write_le_u64(self.next_id)?;
-        file.write_le_u64(record_cnt)?;
-        file.write_le_u64(self.o_first_record)?;
-        file.write_le_u64(self.o_last_record)?;
+        file.move_to(header.position)?;
+        header.record_count = record_cnt;
+        header.write_to_file(file)?;
 
-        self.record_count = record_cnt;
         self.updates.clear();
-        self.tracked.clear();
+        self.tracked_updates.clear();
 
         Ok(())
+    }
+}
+
+impl<T: RecordPayload> CollectionHandle for Collection<T> {
+    fn header(&self) -> &CollectionHeader {
+        &self.header
     }
 }

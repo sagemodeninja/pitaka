@@ -38,7 +38,7 @@ impl MainView {
 
 impl Render for MainView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let content = if self.state.read(_cx).document.is_some() {
+        let content = if self.state.read(_cx).vault.is_some() {
             render_main(self)
         } else {
             render_welcome(_cx)

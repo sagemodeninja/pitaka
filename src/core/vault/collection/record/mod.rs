@@ -24,7 +24,6 @@ pub struct Record<T: RecordPayload> {
 }
 
 pub trait RecordPayload: FileHandle {
-    fn record_type() -> u8;
     fn size(&self) -> u32;
 }
 

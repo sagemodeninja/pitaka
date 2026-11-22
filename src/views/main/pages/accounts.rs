@@ -19,9 +19,9 @@ use crate::{
         row,
     },
     core::{
-        document::collection::{Account, Transaction},
         state::PitakaState,
         types::Money,
+        vault::collection::{Account, Transaction},
     },
 };
 
@@ -71,9 +71,16 @@ impl Render for AccountsPage {
                         .label("Add Account")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.state.update(cx, |state, cx| {
-                                if let Some(doc) = &mut state.document {
+                                if let Some(doc) = &mut state.vault {
                                     let dname = this.acct_dname_ipt.read(cx).value();
-                                    doc.accounts.add(Account {
+                                    let accounts = match doc.accounts() {
+                                        Ok(accounts) => accounts,
+                                        Err(error) => {
+                                            eprintln!("Could not load accounts: {error}");
+                                            return;
+                                        }
+                                    };
+                                    accounts.add(Account {
                                         display_name: dname.into(),
                                     });
                                 };
@@ -116,9 +123,18 @@ impl Render for AccountsPage {
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         if let Some(id) = this.selected_acct_id {
                                             this.state.update(cx, |state, cx| {
-                                                if let Some(doc) = &mut state.document {
-                                                    doc.accounts.delete(id);
-                                                    cx.notify();
+                                                if let Some(doc) = &mut state.vault {
+                                                    match doc.accounts() {
+                                                        Ok(accounts) => {
+                                                            accounts.delete(id);
+                                                            cx.notify();
+                                                        }
+                                                        Err(error) => {
+                                                            eprintln!(
+                                                                "Could not load accounts: {error}"
+                                                            );
+                                                        }
+                                                    }
                                                 }
                                             });
                                         };
@@ -144,13 +160,22 @@ impl Render for AccountsPage {
                             .label("Add Transaction")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.state.update(cx, |state, cx| {
-                                    if let Some(doc) = &mut state.document {
+                                    if let Some(doc) = &mut state.vault {
                                         if let Some(id) = this.selected_acct_id {
                                             let desc = this.trans_desc_ipt.read(cx).value();
                                             let s_amnt = this.trans_amnt_ipt.read(cx).value();
 
                                             if let Ok(amount) = s_amnt.parse::<Money>() {
-                                                doc.transactions.add(Transaction {
+                                                let transactions = match doc.transactions() {
+                                                    Ok(transactions) => transactions,
+                                                    Err(error) => {
+                                                        eprintln!(
+                                                            "Could not load transactions: {error}"
+                                                        );
+                                                        return;
+                                                    }
+                                                };
+                                                transactions.add(Transaction {
                                                     account_id: id,
                                                     occured_at: Utc::now(),
                                                     description: desc.into(),
@@ -170,7 +195,7 @@ impl Render for AccountsPage {
 
 fn render_accts(page: &AccountsPage, cx: &mut Context<AccountsPage>) -> Div {
     let records = page.state.update(cx, |state, _| {
-        state.document.as_mut().map(|doc| doc.get_all_accts())
+        state.vault.as_mut().map(|doc| doc.get_all_accts())
     });
 
     match records {
@@ -212,10 +237,7 @@ fn render_accts(page: &AccountsPage, cx: &mut Context<AccountsPage>) -> Div {
 fn render_trans(view: &AccountsPage, cx: &mut App) -> Div {
     if let Some(acct_id) = view.selected_acct_id {
         let records = view.state.update(cx, |state, _| {
-            state
-                .document
-                .as_mut()
-                .map(|doc| doc.get_acct_trans(acct_id))
+            state.vault.as_mut().map(|doc| doc.get_acct_trans(acct_id))
         });
 
         match records {

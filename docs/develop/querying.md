@@ -33,11 +33,11 @@ self.transactions
     .collect()
 ```
 
-`PitakaDocument::get_acct_trans(id)` uses the same filter and reverse order and returns all matching transactions. The default order is first to last in the collection. The query reverses the matching offsets if requested, applies `skip` and `take`, then reads only the selected payloads. The defaults are zero skipped records and no limit.
+`PitakaVault::get_acct_trans(id)` uses the same filter and reverse order and returns all matching transactions. The default order is first to last in the collection. The query reverses the matching offsets if requested, applies `skip` and `take`, then reads only the selected payloads. The defaults are zero skipped records and no limit.
 
 Use one indexed filter per query. If a query has no filter, the index is unavailable, or the selected value has no matches, it returns an empty vector. Use `Collection::get_all` for a full collection read. Adding a second filter with the same name replaces the first value. With multiple names, the collector uses the first available index it encounters in a hash map, whose iteration order is unspecified.
 
-The index reflects the persisted records scanned at open time. Pending appends are excluded, and saving leaves the in-memory index as it was. Reopen the document after saving to include new transactions in indexed results. A document returned by `PitakaDocument::create` gets its transaction index on the first reopen.
+The index reflects the persisted records scanned at open time. Pending appends are excluded, and saving leaves the in-memory index as it was. Reopen the document after saving to include new transactions in indexed results. A document returned by `PitakaVault::create` gets its transaction index on the first reopen.
 
 ## Planned: Multiple filters
 

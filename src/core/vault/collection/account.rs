@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io;
 
 use crate::{
-    core::document::collection::RecordPayload,
+    core::vault::collection::{CollectionType, RecordPayload},
     utils::{
         extensions::{
             file::{FileReadExtensions, FileWriteExtensions},
@@ -17,11 +17,13 @@ pub struct Account {
     pub display_name: String,
 }
 
-impl RecordPayload for Account {
-    fn record_type() -> u8 {
+impl CollectionType for Account {
+    fn c_type() -> u8 {
         1
     }
+}
 
+impl RecordPayload for Account {
     fn size(&self) -> u32 {
         self.display_name.len_u32()
     }

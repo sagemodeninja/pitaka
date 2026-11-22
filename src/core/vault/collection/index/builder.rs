@@ -1,4 +1,4 @@
-use crate::core::document::collection::{Record, RecordPayload};
+use crate::core::vault::collection::{Record, RecordPayload};
 
 use super::value::IndexValue;
 use std::collections::HashMap;

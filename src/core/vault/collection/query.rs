@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io};
 
-use crate::core::document::collection::{Record, RecordPayload, index::IndexValue};
+use crate::core::vault::collection::{Record, RecordPayload, index::IndexValue};
 
 pub struct CollectionQueryPlan {
     pub skip: u32,
