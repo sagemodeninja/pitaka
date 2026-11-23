@@ -73,14 +73,7 @@ impl Render for AccountsPage {
                             this.state.update(cx, |state, cx| {
                                 if let Some(doc) = &mut state.vault {
                                     let dname = this.acct_dname_ipt.read(cx).value();
-                                    let accounts = match doc.accounts() {
-                                        Ok(accounts) => accounts,
-                                        Err(error) => {
-                                            eprintln!("Could not load accounts: {error}");
-                                            return;
-                                        }
-                                    };
-                                    accounts.add(Account {
+                                    doc.accounts().add(Account {
                                         display_name: dname.into(),
                                     });
                                 };
@@ -124,17 +117,8 @@ impl Render for AccountsPage {
                                         if let Some(id) = this.selected_acct_id {
                                             this.state.update(cx, |state, cx| {
                                                 if let Some(doc) = &mut state.vault {
-                                                    match doc.accounts() {
-                                                        Ok(accounts) => {
-                                                            accounts.delete(id);
-                                                            cx.notify();
-                                                        }
-                                                        Err(error) => {
-                                                            eprintln!(
-                                                                "Could not load accounts: {error}"
-                                                            );
-                                                        }
-                                                    }
+                                                    doc.accounts().delete(id);
+                                                    cx.notify();
                                                 }
                                             });
                                         };
@@ -166,16 +150,7 @@ impl Render for AccountsPage {
                                             let s_amnt = this.trans_amnt_ipt.read(cx).value();
 
                                             if let Ok(amount) = s_amnt.parse::<Money>() {
-                                                let transactions = match doc.transactions() {
-                                                    Ok(transactions) => transactions,
-                                                    Err(error) => {
-                                                        eprintln!(
-                                                            "Could not load transactions: {error}"
-                                                        );
-                                                        return;
-                                                    }
-                                                };
-                                                transactions.add(Transaction {
+                                                doc.transactions().add(Transaction {
                                                     account_id: id,
                                                     occured_at: Utc::now(),
                                                     description: desc.into(),

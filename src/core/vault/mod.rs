@@ -20,11 +20,13 @@ impl PitakaVault {
         let mut file = open_file(path, true)?;
 
         let mut header = PitakaVaultHeader::new(name);
+
         let mut collections = RootCollection::create();
 
         // Write to file...
         header.write_to_file(&mut file)?;
         collections.write_to_file(&mut file)?;
+        collections.init(&mut file)?;
 
         Ok(Self {
             file,
@@ -40,7 +42,8 @@ impl PitakaVault {
         header.validate()?;
 
         // Collection discovery...
-        let collections = RootCollection::read_from_file(&mut file)?;
+        let mut collections = RootCollection::read_from_file(&mut file)?;
+        collections.init(&mut file)?;
 
         Ok(PitakaVault {
             file,
@@ -53,24 +56,24 @@ impl PitakaVault {
         &self.header.display_name
     }
 
-    pub fn accounts(&mut self) -> io::Result<&mut Collection<Account>> {
-        self.collections.get::<Account>(&mut self.file)
+    pub fn accounts(&mut self) -> &mut Collection<Account> {
+        self.collections.get::<Account>()
     }
 
-    pub fn transactions(&mut self) -> io::Result<&mut Collection<Transaction>> {
-        self.collections.transactions(&mut self.file)
+    pub fn transactions(&mut self) -> &mut Collection<Transaction> {
+        self.collections.get::<Transaction>()
     }
 
     pub fn get_all_accts(&mut self) -> io::Result<Vec<Record<Account>>> {
         self.collections
-            .accounts(&mut self.file)?
+            .get::<Account>()
             .query(&mut self.file)
             .collect()
     }
 
     pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<Record<Transaction>>> {
         self.collections
-            .transactions(&mut self.file)?
+            .get::<Transaction>()
             .query(&mut self.file)
             .filter_indexed("acct_id", id.into())
             .reverse()
@@ -78,15 +81,7 @@ impl PitakaVault {
     }
 
     pub fn save(&mut self) -> io::Result<()> {
-        self.collections
-            .accounts(&mut self.file)?
-            .write_to_file(&mut self.file)?;
-
-        self.collections
-            .transactions(&mut self.file)?
-            .write_to_file(&mut self.file)?;
-
-        Ok(())
+        self.collections.write_to_file(&mut self.file)
     }
 }
 

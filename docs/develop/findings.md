@@ -15,9 +15,9 @@ The developer and agent can both add verified findings. Include the observed beh
 
 | Finding | Evidence | Status | Resolution |
 | --- | --- | --- | --- |
-| A new root collection reaches save with header position zero and no header space allocated. | [Root creation](../../src/core/vault/collection/root.rs) seeks to byte 80, but [collection save](../../src/core/vault/collection/mod.rs) appends at EOF before seeking to the stored position. For a new vault with an 80-byte file header, the first root record starts at byte 80 and the root header is written at byte 0. | Open | |
-| A missing catalog entry can produce a managed collection with header position zero. | [The lookup fallback](../../src/core/vault/collection/root.rs) copies the header before persisting the catalog entry, and vault save writes the managed collections without first writing the catalog. | Open | |
-| Managed collection saves can leave catalog entries stale and overwrite record data. | A 445-byte local sample has empty embedded headers at offsets 160 and 240, followed by detached headers at 280 and 320. The header at 320 occupies the account record header referenced by the header at 280. [Vault save](../../src/core/vault/mod.rs) writes collections at the current file cursor after loading them. | Open | |
+| Creating a vault could overwrite the vault header with root data. | A create, save, and reopen check preserved the vault header and returned the saved account and transaction. | Resolved | Root creation assigns its header offset and the root writer reserves the header space before appending records. |
+| A missing catalog entry could leave a managed collection with header position zero. | A vault with only an Accounts catalog entry opened successfully, saved a new transaction, and returned that transaction after reopening. | Resolved | The root saves the catalog first and resolves the child header position before saving the child. |
+| Managed collection saves could leave catalog entries stale and overwrite record data. | Fresh vaults passed save and reopen checks for one account and one transaction, repeated saves, and two accounts added in one save. | Resolved | The root saves each managed collection using the position of its embedded header. Existing files with prior corruption were outside these checks. |
 | The accounts page referenced the removed direct account and transaction fields. | `cargo check --offline` previously reported three E0609 errors in [the accounts page](../../src/views/main/pages/accounts.rs). | Resolved | The page uses the vault's typed collection accessors. The check passes. |
 | Creating a vault reached an unimplemented managed collection writer. | [Vault creation](../../src/core/vault/mod.rs) adds managed collections and writes the root. | Resolved | [The managed payload writer](../../src/core/vault/collection/managed.rs) writes the embedded 40-byte header. |
 | The vault rename left documentation links pointing to the old module. | Code Organization and Findings referenced `src/core/document`, and Querying used the old `PitakaDocument` type name. | Resolved | Uses `src/core/vault` and `PitakaVault`. |
@@ -30,6 +30,16 @@ The developer and agent can both add verified findings. Include the observed beh
 | Pitaka's locked GPUI backend supports opt-in hot reload for desktop view rendering. | [`Cargo.lock`](../../Cargo.lock) resolves GPUI Kit 0.9.1 to `gpui-pre` 0.3.12. The backend defines `hot-reload`, but Kit 0.9.1 does not forward it, and `cargo tree --offline -e features -i gpui-pre` confirms it is inactive in Pitaka. [GPUI hot reload integration](https://github.com/zed-industries/zed/pull/65738) | Open | |
 
 ## Devlogs
+
+<details>
+<summary><strong>Nov. 23, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 10:43 AM +08:00 | Verified the current root save flow with temporary tests covering a save and reopen, a repeated save, a batch append, and recovery of a missing managed collection header. |
+
+</details>
 
 <details>
 <summary><strong>Nov. 21, 2026</strong></summary>

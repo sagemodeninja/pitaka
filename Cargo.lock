@@ -10,6 +10,7 @@ dependencies = [
  "directories",
  "gpui-kit",
  "gpui-pre",
+ "indexmap",
  "regex",
  "serde",
  "serde_json",

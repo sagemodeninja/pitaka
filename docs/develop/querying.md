@@ -6,10 +6,15 @@ This acts as both official documentation and devlogs.
 
 ## Contents
 
+- [Loaded collections](#loaded-collections)
 - [Collection indexes](#collection-indexes)
 - [Querying by index](#querying-by-index)
 - [Planned multiple filters](#planned-multiple-filters)
 - [Devlogs](#devlogs)
+
+## Loaded collections
+
+The vault loads accounts and then transactions into a shared `IndexMap` keyed by collection type ID during initialization. Queries, edits, and saves use those same collection instances. The vault delegates saves to the root collection. The root writes its headers first, then writes the built collections in cache order. A child with a newly persisted header gets its file offset before the child writer runs.
 
 ## Collection indexes
 
@@ -37,13 +42,26 @@ self.transactions
 
 Use one indexed filter per query. If a query has no filter, the index is unavailable, or the selected value has no matches, it returns an empty vector. Use `Collection::get_all` for a full collection read. Adding a second filter with the same name replaces the first value. With multiple names, the collector uses the first available index it encounters in a hash map, whose iteration order is unspecified.
 
-The index reflects the persisted records scanned at open time. Pending appends are excluded, and saving leaves the in-memory index as it was. Reopen the document after saving to include new transactions in indexed results. A document returned by `PitakaVault::create` gets its transaction index on the first reopen.
+The index reflects the persisted records scanned at open time. Pending appends are excluded, and saving leaves the in-memory index as it was. Reopen the document after saving to include new transactions in indexed results. A new vault initializes its transaction index after writing the collection headers.
 
 ## Planned: Multiple filters
 
 AND queries could intersect candidate offsets or use one index to find candidates and check the remaining conditions against their payloads. OR queries could union candidate offsets and deduplicate them. Both would determine result order before applying pagination.
 
 ## Devlogs
+
+<details>
+<summary><strong>Nov. 23, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 10:41 AM +08:00 | Kept the current root save flow, which looks up a managed collection’s header position when needed. Deferred the proposal for `Collection<AnyCollection>` to own the live records because `Collection<T>` would need to retain saved records in memory and track their disk offsets. |
+| 09:50 AM +08:00 | Moved save dispatch into the root collection. Its writer persists headers first and uses the type-erased collection writer for each cached child. |
+| 09:41 AM +08:00 | Updated vault queries and saves to borrow the shared collection cache and file separately. New vaults write their collection headers before loading the cache so initialization can find the registered headers. |
+| 09:25 AM +08:00 | Wired the generic root collection cache to `IndexMap` so its built collections can be visited in first-load order. |
+
+</details>
 
 See the [record deletion timeline](file_layout.md#devlogs) for the discussion of deletion and pagination.
 
