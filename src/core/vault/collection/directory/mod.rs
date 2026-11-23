@@ -1,10 +1,10 @@
 mod error;
 
+pub use error::*;
+
 use std::slice::Iter;
 
-use crate::core::vault::collection::{
-    directory::error::RecordDirectoryError, location::RecordLocation,
-};
+use crate::core::vault::collection::location::RecordLocation;
 
 type Entry = (u64, RecordLocation);
 

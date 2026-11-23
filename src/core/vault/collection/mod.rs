@@ -21,7 +21,7 @@ use std::io::{self};
 use std::os::unix::fs::MetadataExt;
 
 use crate::core::vault::collection::delta::RecordDelta::{self, Create, Delete, Update};
-use crate::core::vault::collection::directory::RecordDirectory;
+use crate::core::vault::collection::directory::{RecordDirectory, RecordDirectoryError};
 use crate::core::vault::collection::index::{CollectionIndexBuilder, IndexValue};
 use crate::core::vault::collection::location::RecordLocation::{self, InMemory, OnDisk};
 use crate::core::vault::collection::query::CollectionQueryBuilder;
@@ -150,15 +150,27 @@ impl<T: RecordPayload> Collection<T> {
         header.next_record_id += 1;
     }
 
-    pub fn update(&mut self, id: u64, item: T) {
-        // TODO: Verify if item is in the directory.
-        // let entry = self.directory.get(&id);
+    pub fn update(&mut self, id: u64, item: T) -> Result<(), RecordDirectoryError> {
+        if let Some((_, location)) = self.directory.get(&id) {
+            match location {
+                OnDisk(offset) => {
+                    let offset = *offset;
+                    self.directory.update(id, InMemory)?;
+                    self.updates
+                        .insert(id, RecordDelta::Update(id, offset, item));
+                }
+                InMemory => {
+                    if let Some(delta) = self.updates.get(&id) {
+                        if let Update(_, offset, _) = delta {
+                            let delta = RecordDelta::Update(id, *offset, item);
+                            self.updates.insert(id, delta);
+                        }
+                    }
+                }
+            }
+        }
 
-        // file
-        // let record =
-
-        // self.updates.push((id, RecordDelta::Update(id)));
-        // self.tracked_updates.insert(id, )
+        Ok(())
     }
 
     pub fn delete(&mut self, id: u64) {
