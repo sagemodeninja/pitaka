@@ -5,8 +5,9 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::PathBuf;
 
+use crate::core::vault::collection::RecordSlice;
 use crate::utils::file::FileHandle;
-use collection::{Account, Collection, Record, RootCollection, Transaction};
+use collection::{Account, Collection, RootCollection, Transaction};
 use header::PitakaVaultHeader;
 
 pub struct PitakaVault {
@@ -64,14 +65,14 @@ impl PitakaVault {
         self.collections.get::<Transaction>()
     }
 
-    pub fn get_all_accts(&mut self) -> io::Result<Vec<Record<Account>>> {
+    pub fn get_all_accts(&mut self) -> io::Result<Vec<RecordSlice<Account>>> {
         self.collections
             .get::<Account>()
             .query(&mut self.file)
             .collect()
     }
 
-    pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<Record<Transaction>>> {
+    pub fn get_acct_trans(&mut self, id: u64) -> io::Result<Vec<RecordSlice<Transaction>>> {
         self.collections
             .get::<Transaction>()
             .query(&mut self.file)

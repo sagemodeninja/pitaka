@@ -15,12 +15,12 @@ pub use record::*;
 pub use root::*;
 pub use transaction::*;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self};
 use std::os::unix::fs::MetadataExt;
 
-use crate::core::vault::collection::delta::RecordDelta::{self, Create, Delete};
+use crate::core::vault::collection::delta::RecordDelta::{self, Create, Delete, Update};
 use crate::core::vault::collection::directory::RecordDirectory;
 use crate::core::vault::collection::index::{CollectionIndexBuilder, IndexValue};
 use crate::core::vault::collection::location::RecordLocation::{self, InMemory, OnDisk};
@@ -32,12 +32,9 @@ use crate::utils::file::FileHandle;
 
 pub struct Collection<T: RecordPayload> {
     header: CollectionHeader,
-
     directory: RecordDirectory,
     indexes: CollectionIndexBuilder<T>,
-    updates: Vec<(u64, RecordDelta)>,
-
-    tracked_updates: HashMap<u64, Record<T>>,
+    updates: BTreeMap<u64, RecordDelta<T>>,
 }
 
 pub trait CollectionType: RecordPayload {
@@ -48,12 +45,9 @@ impl<T: RecordPayload> Collection<T> {
     pub fn new(header: CollectionHeader) -> Self {
         Self {
             header,
-
             directory: RecordDirectory::new(),
             indexes: CollectionIndexBuilder::new(),
-            updates: Vec::new(),
-
-            tracked_updates: HashMap::new(),
+            updates: BTreeMap::new(),
         }
     }
 
@@ -71,11 +65,10 @@ impl<T: RecordPayload> Collection<T> {
 
         for _ in 0..header.record_count {
             file.move_to(o_r_next)?;
-
             let record = Record::<T>::read_from_file(file)?;
 
             self.directory.insert(record.id, OnDisk(o_r_next));
-            self.indexes.insert(&record);
+            self.indexes.insert(record.id, &record.item);
 
             o_r_next = record.o_next;
         }
@@ -88,7 +81,7 @@ impl<T: RecordPayload> Collection<T> {
         T: Clone,
     {
         CollectionQueryBuilder::new(move |plan| {
-            let mut records = Vec::new();
+            let mut results = Vec::<RecordSlice<T>>::new();
 
             let mut candidates: Box<dyn DoubleEndedIterator<Item = &(u64, RecordLocation)> + '_> =
                 if plan.indexed_filters.is_empty() {
@@ -122,46 +115,63 @@ impl<T: RecordPayload> Collection<T> {
                 match location {
                     OnDisk(offset) => {
                         file.move_to(*offset)?;
-                        records.push(Record::<T>::read_from_file(file)?);
+                        let record = Record::<T>::read_from_file(file)?;
+                        results.push(record.into());
                     }
                     InMemory => {
-                        if let Some(item) = self.tracked_updates.get(id) {
-                            records.push(item.clone());
+                        if let Some(delta) = self.updates.get(id) {
+                            let item = match delta {
+                                Create(id, item) | Update(_, id, item) => {
+                                    Some(RecordSlice::new(*id, item.clone()))
+                                }
+                                _ => None,
+                            };
+
+                            if let Some(item) = item {
+                                results.push(item);
+                            }
                         }
                     }
                 }
             }
 
-            Ok(records)
+            Ok(results)
         })
     }
 
     pub fn add(&mut self, item: T) {
         let header = &mut self.header;
-
         let id = header.next_record_id;
-        let record = Record::new(header.o_last_record, id, item);
 
         self.directory.insert(id, InMemory);
-        self.indexes.insert(&record);
-        self.updates.push((id, RecordDelta::Create(id)));
-        self.tracked_updates.insert(id, record);
+        self.indexes.insert(id, &item);
+        self.updates.insert(id, RecordDelta::Create(id, item));
 
         header.next_record_id += 1;
+    }
+
+    pub fn update(&mut self, id: u64, item: T) {
+        // TODO: Verify if item is in the directory.
+        // let entry = self.directory.get(&id);
+
+        // file
+        // let record =
+
+        // self.updates.push((id, RecordDelta::Update(id)));
+        // self.tracked_updates.insert(id, )
     }
 
     pub fn delete(&mut self, id: u64) {
         if let Some((index, (_, location))) = self.directory.get_with_index(&id) {
             match location {
                 OnDisk(offset) => {
-                    self.updates.push((id, Delete(*offset)));
+                    self.updates.insert(id, Delete(*offset));
                 }
                 InMemory => {
-                    self.updates.retain(|(target_id, _)| *target_id != id);
+                    self.updates.remove(&id);
                 }
             }
 
-            self.tracked_updates.remove(&id);
             self.directory.remove(index);
         }
     }
@@ -171,24 +181,21 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
     fn read_from_file(file: &mut File) -> io::Result<Self> {
         Ok(Self {
             header: CollectionHeader::read_from_file(file)?,
-
             directory: RecordDirectory::new(),
             indexes: CollectionIndexBuilder::new(),
-            updates: Vec::new(),
-
-            tracked_updates: HashMap::new(),
+            updates: BTreeMap::new(),
         })
     }
 
     fn write_to_file(&mut self, file: &mut File) -> io::Result<()> {
         let header = &mut self.header;
 
-        let mut for_append: Vec<u64> = vec![];
+        let mut for_append: Vec<&RecordDelta<T>> = vec![];
         let mut for_remove: Vec<u64> = vec![];
 
-        for (_, delta) in self.updates.iter() {
+        for (_, delta) in &self.updates {
             match delta {
-                Create(id) => for_append.push(*id),
+                Create(_, _) => for_append.push(delta),
                 Delete(offset) => for_remove.push(*offset),
                 _ => {}
             }
@@ -224,7 +231,7 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
         // Append new records...
         if append_len > 0 {
-            let mut o_prev = header.o_last_record;
+            let mut o_curr = header.o_last_record;
             let mut o_next = file.metadata()?.size();
 
             if header.record_count - remove_len == 0 {
@@ -236,33 +243,26 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
 
             // Append new records...
             for index in 0..append_len {
-                let is_last = index == append_len - 1;
+                if let Create(id, item) = for_append.remove(index as usize) {
+                    let mut record = Record::<T>::new(o_curr, *id, item.clone());
 
-                if is_last {
-                    header.o_last_record = o_next;
-                }
-
-                let id = for_append[index as usize];
-                if let Some(record) = self.tracked_updates.get_mut(&id) {
-                    let o_curr = o_next;
-
-                    file.move_to(o_curr)?;
-
-                    record.o_prev = o_prev;
-
-                    o_prev = o_next;
-                    o_next = if !is_last {
+                    o_curr = o_next;
+                    o_next = if index < append_len {
                         o_next + record.size() as u64
                     } else {
                         0
                     };
 
                     record.o_next = o_next;
+
+                    file.move_to(o_curr)?;
                     record.write_to_file(file)?;
 
-                    self.directory.update(id, OnDisk(o_curr))?;
+                    self.directory.update(*id, OnDisk(o_curr))?;
                 }
             }
+
+            header.o_last_record = o_curr;
         }
 
         file.move_to(header.position)?;
@@ -270,7 +270,6 @@ impl<T: RecordPayload> FileHandle for Collection<T> {
         header.write_to_file(file)?;
 
         self.updates.clear();
-        self.tracked_updates.clear();
 
         Ok(())
     }

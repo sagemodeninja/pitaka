@@ -1,6 +1,8 @@
 use std::{collections::HashMap, io};
 
-use crate::core::vault::collection::{Record, RecordPayload, index::IndexValue};
+use super::{RecordPayload, RecordSlice, index::IndexValue};
+
+type QueryResult<T> = Vec<RecordSlice<T>>;
 
 pub struct CollectionQueryPlan {
     pub skip: u32,
@@ -11,7 +13,7 @@ pub struct CollectionQueryPlan {
 
 pub struct CollectionQueryBuilder<'a, T: RecordPayload> {
     plan: CollectionQueryPlan,
-    collector: Box<dyn FnOnce(CollectionQueryPlan) -> io::Result<Vec<Record<T>>> + 'a>,
+    collector: Box<dyn FnOnce(CollectionQueryPlan) -> io::Result<QueryResult<T>> + 'a>,
 }
 
 impl CollectionQueryPlan {
@@ -27,7 +29,7 @@ impl CollectionQueryPlan {
 
 impl<'a, T: RecordPayload> CollectionQueryBuilder<'a, T> {
     pub fn new(
-        collector: impl FnOnce(CollectionQueryPlan) -> io::Result<Vec<Record<T>>> + 'a,
+        collector: impl FnOnce(CollectionQueryPlan) -> io::Result<QueryResult<T>> + 'a,
     ) -> Self {
         Self {
             plan: CollectionQueryPlan::new(),
@@ -57,7 +59,7 @@ impl<'a, T: RecordPayload> CollectionQueryBuilder<'a, T> {
         self
     }
 
-    pub fn collect(self) -> io::Result<Vec<Record<T>>> {
+    pub fn collect(self) -> io::Result<QueryResult<T>> {
         (self.collector)(self.plan)
     }
 }

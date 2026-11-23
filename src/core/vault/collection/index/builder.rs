@@ -27,14 +27,16 @@ impl<T: RecordPayload> CollectionIndexBuilder<T> {
         self.indexes.get(key)
     }
 
-    pub fn insert(&mut self, record: &Record<T>) {
+    pub fn insert(&mut self, id: u64, item: &T) {
         for (key, eval) in &self.evaluators {
+            let value = eval(&item);
+
             self.indexes
                 .entry(key.clone())
                 .or_default()
-                .entry(eval(&record.item))
+                .entry(value)
                 .or_default()
-                .push(record.id);
+                .push(id);
         }
     }
 }
