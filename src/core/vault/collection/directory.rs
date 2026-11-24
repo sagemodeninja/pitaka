@@ -1,10 +1,7 @@
-mod error;
-
-pub use error::*;
-
 use std::slice::Iter;
 
-use crate::core::vault::collection::location::RecordLocation;
+use super::CollectionError;
+use super::location::RecordLocation;
 
 type Entry = (u64, RecordLocation);
 
@@ -42,13 +39,13 @@ impl RecordDirectory {
         self.directory.push((id, loc));
     }
 
-    pub fn update(&mut self, id: u64, loc: RecordLocation) -> Result<usize, RecordDirectoryError> {
+    pub fn update(&mut self, id: u64, loc: RecordLocation) -> Result<usize, CollectionError> {
         match self.index_of(&id) {
             Some(index) => {
                 self.directory[index] = (id, loc);
                 Ok(index)
             }
-            None => Err(RecordDirectoryError::Update(id)),
+            None => Err(CollectionError::RecordNotFound(id)),
         }
     }
 
