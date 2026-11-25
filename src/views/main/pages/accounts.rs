@@ -21,7 +21,10 @@ use crate::{
     core::{
         state::PitakaState,
         types::Money,
-        vault::collection::{Account, Transaction},
+        vault::{
+            self,
+            collection::{Account, Transaction},
+        },
     },
 };
 
@@ -47,10 +50,17 @@ impl AccountsPage {
             let rename_dname_sub = cx.subscribe_in(
                 &acct_r_dname_ipt,
                 window,
-                |this, input, event: &InputEvent, _window, cx| {
+                |this: &mut AccountsPage, input, event: &InputEvent, _window, cx| {
                     if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                        let id = this.selected_acct_id.unwrap();
                         let name = input.read(cx).value();
-                        println!("{name}")
+                        this.state.update(cx, |state, cx| {
+                            if let Some(vault) = &mut state.vault {
+                                if let Some(account) = vault.get_account(id) {
+                                    println!(">>account: {id}/{}", account.id);
+                                }
+                            }
+                        });
                     }
                 },
             );

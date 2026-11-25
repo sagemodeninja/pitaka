@@ -18,7 +18,7 @@ The vault loads accounts and then transactions into a shared `IndexMap` keyed by
 
 ## Collection indexes
 
-Each collection can register named equality indexes with `Collection::index(name, evaluator)`. The evaluator extracts an `IndexValue` from a record payload. Currently the only supported value is `IndexValue::U16`, and a `u16` can be converted with `.into()`.
+Each collection can register named equality indexes with `Collection::add_index(name, evaluator)`. The evaluator extracts an `IndexValue` from a record payload. The supported variants are `IndexValue::U8` and `IndexValue::U64`, and a `u8` or `u64` can be converted with `.into()`.
 
 When a document is opened, `Collection::read` builds the indexes in memory. The builder follows the collection's on-disk record links from first to last, reads each payload, and runs the registered evaluators. Each named index is a `HashMap<IndexValue, Vec<u64>>`. Each vector holds absolute file offsets of record headers in collection order. The [file format](file_layout.md) stores the records and their links. Indexes are rebuilt from those records when the document is reopened.
 
@@ -49,6 +49,17 @@ The index reflects the persisted records scanned at open time. Pending appends a
 AND queries could intersect candidate offsets or use one index to find candidates and check the remaining conditions against their payloads. OR queries could union candidate offsets and deduplicate them. Both would determine result order before applying pagination.
 
 ## Devlogs
+
+<details>
+<summary><strong>Nov. 25, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 10:47 PM +08:00 | Fixed cross-module `filter!` expansion with a crate-qualified `QueryFilter`. The account lookup borrows the vault mutably. The macro now boxes a reusable predicate with an explicit `&RecordSlice<_>` parameter so it can access the record ID and infer the payload type. |
+| 09:48 PM +08:00 | Discussed a closure-shaped `r#where!` macro for field equality, then proposed a single `filter` method for indexed and unindexed fields. The filter would carry a predicate and optional index lookup information, such as `acct_id` and a `u64` key for transaction `account_id`. The collector could use a current index to find candidates or scan the directory, and apply pagination after matching. |
+
+</details>
 
 <details>
 <summary><strong>Nov. 23, 2026</strong></summary>

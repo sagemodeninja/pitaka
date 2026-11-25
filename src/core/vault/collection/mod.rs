@@ -13,6 +13,7 @@ pub use account::*;
 pub use any::*;
 pub use error::*;
 pub use header::*;
+pub use query::*;
 pub use record::*;
 pub use root::*;
 pub use transaction::*;
@@ -85,20 +86,35 @@ impl<T: RecordPayload> Collection<T> {
         CollectionQueryBuilder::new(move |plan| {
             let mut results = Vec::<RecordSlice<T>>::new();
 
-            let mut candidates: Box<dyn DoubleEndedIterator<Item = &(u64, RecordLocation)> + '_> =
-                if plan.indexed_filters.is_empty() {
-                    Box::new(self.directory.iter())
-                } else {
-                    let ids = plan
-                        .indexed_filters
-                        .iter()
-                        .next()
-                        .and_then(|(key, value)| self.indexes.get(key)?.get(value))
-                        .map(Vec::as_slice)
-                        .unwrap_or(&[]);
+            type Candidates<'a> =
+                Box<dyn DoubleEndedIterator<Item = &'a (u64, RecordLocation)> + 'a>;
 
-                    Box::new(ids.iter().filter_map(move |id| self.directory.get(id)))
-                };
+            let mut candidates: Candidates<'_> = match plan.filters.into_iter().next() {
+                Some(filter) => self
+                    .indexes
+                    .get(filter.field)
+                    .and_then(|index| {
+                        index.get(&filter.value).map(|ids| -> Candidates<'_> {
+                            Box::new(ids.iter().filter_map(|id| self.directory.get(id)))
+                        })
+                    })
+                    .unwrap_or(Box::new(self.directory.iter())),
+                None => {
+                    if plan.indexed_filters.is_empty() {
+                        Box::new(self.directory.iter())
+                    } else {
+                        let ids = plan
+                            .indexed_filters
+                            .iter()
+                            .next()
+                            .and_then(|(key, value)| self.indexes.get(key)?.get(value))
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]);
+
+                        Box::new(ids.iter().filter_map(move |id| self.directory.get(id)))
+                    }
+                }
+            };
 
             let mut reversed;
             let iter: &mut dyn Iterator<Item = &(u64, RecordLocation)> = if plan.is_reversed {
