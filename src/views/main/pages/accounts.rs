@@ -1,12 +1,12 @@
 use chrono::Utc;
 use gpui::{
     App, AppContext, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, px, rgba,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, px, rgba,
 };
 use gpui_kit::{
-    base::input::{InputState, MaskPattern},
+    base::input::{InputEvent, InputState, MaskPattern},
     component::{
-        ActiveTheme, IconName,
+        IconName,
         button::{Button, ButtonVariants},
         input::Input,
     },
@@ -14,7 +14,7 @@ use gpui_kit::{
 
 use crate::{
     components::{
-        CustomIcon, ScalableIcon, column,
+        AccountCard, CustomIcon, ScalableIcon, column,
         liquid::{LiquidButton, LiquidButtonAppearance},
         row,
     },
@@ -31,27 +31,48 @@ pub struct AccountsPage {
 
     acct_form_visible: bool,
     acct_dname_ipt: Entity<InputState>,
+    acct_r_dname_ipt: Entity<InputState>,
     trans_desc_ipt: Entity<InputState>,
     trans_amnt_ipt: Entity<InputState>,
+
+    _rename_dname_sub: Subscription,
 }
 
 impl AccountsPage {
     pub fn new(state: &Entity<PitakaState>, window: &mut Window, app: &mut App) -> Entity<Self> {
-        app.new(|cx| Self {
-            state: state.clone(),
-            selected_acct_id: None,
-            acct_form_visible: false,
-            acct_dname_ipt: cx.new(|cx| InputState::new(window, cx).placeholder("Enter name")),
-            trans_desc_ipt: cx
-                .new(|cx| InputState::new(window, cx).placeholder("Enter description")),
-            trans_amnt_ipt: cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("Enter amount")
-                    .mask_pattern(MaskPattern::Number {
-                        separator: Some(','),
-                        fraction: Some(2),
-                    })
-            }),
+        app.new(|cx| {
+            let acct_r_dname_ipt =
+                cx.new(|cx| InputState::new(window, cx).placeholder("Enter name"));
+
+            let rename_dname_sub = cx.subscribe_in(
+                &acct_r_dname_ipt,
+                window,
+                |this, input, event: &InputEvent, _window, cx| {
+                    if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                        let name = input.read(cx).value();
+                        println!("{name}")
+                    }
+                },
+            );
+
+            Self {
+                state: state.clone(),
+                selected_acct_id: None,
+                acct_form_visible: false,
+                acct_dname_ipt: cx.new(|cx| InputState::new(window, cx).placeholder("Enter name")),
+                acct_r_dname_ipt,
+                trans_desc_ipt: cx
+                    .new(|cx| InputState::new(window, cx).placeholder("Enter description")),
+                trans_amnt_ipt: cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .placeholder("Enter amount")
+                        .mask_pattern(MaskPattern::Number {
+                            separator: Some(','),
+                            fraction: Some(2),
+                        })
+                }),
+                _rename_dname_sub: rename_dname_sub,
+            }
         })
     }
 }
@@ -92,41 +113,46 @@ impl Render for AccountsPage {
             .child(
                 column()
                     .gap_2()
+                    .w(px(320.))
                     .child(
                         row()
-                            .gap_1()
-                            .justify_end()
+                            .items_center()
+                            .justify_between()
                             .p_2()
                             .border_b_1()
                             .border_color(rgba(0x42424240))
+                            .child("Accounts")
                             .child(
-                                LiquidButton::new("liquid-add-button")
-                                    .icon(ScalableIcon::new(IconName::Plus).size(20.0))
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.acct_form_visible = true;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                LiquidButton::new("liquid-edit-button")
-                                    .appearance(LiquidButtonAppearance::Danger)
-                                    .icon(ScalableIcon::new(CustomIcon::Trash).size(18.0))
-                                    .label("Delete")
-                                    .disabled(self.selected_acct_id.is_none())
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        if let Some(id) = this.selected_acct_id {
-                                            this.state.update(cx, |state, cx| {
-                                                if let Some(doc) = &mut state.vault {
-                                                    doc.accounts().delete(id);
-                                                    cx.notify();
-                                                }
-                                            });
-                                        };
-                                    })),
+                                row()
+                                    .gap_1()
+                                    .child(
+                                        LiquidButton::new("liquid-add-button")
+                                            .icon(ScalableIcon::new(IconName::Plus).size(20.0))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.acct_form_visible = true;
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(
+                                        LiquidButton::new("liquid-edit-button")
+                                            .appearance(LiquidButtonAppearance::Danger)
+                                            .icon(ScalableIcon::new(CustomIcon::Trash).size(18.0))
+                                            .label("Delete")
+                                            .disabled(self.selected_acct_id.is_none())
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Some(id) = this.selected_acct_id {
+                                                    this.state.update(cx, |state, cx| {
+                                                        if let Some(doc) = &mut state.vault {
+                                                            doc.accounts().delete(id);
+                                                            cx.notify();
+                                                        }
+                                                    });
+                                                };
+                                            })),
+                                    ),
                             ),
                     )
                     .child(form)
-                    .w(px(320.))
                     .child(render_accts(self, cx))
                     .border_r_1()
                     .border_color(rgba(0x42424240)),
@@ -136,6 +162,7 @@ impl Render for AccountsPage {
                     .gap_2()
                     .p_4()
                     .w(px(320.))
+                    .child(Input::new(&self.acct_r_dname_ipt).cleanable(true))
                     .child(Input::new(&self.trans_desc_ipt).cleanable(true))
                     .child(Input::new(&self.trans_amnt_ipt))
                     .child(
@@ -177,25 +204,22 @@ fn render_accts(page: &AccountsPage, cx: &mut Context<AccountsPage>) -> Div {
         Some(Ok(records)) => div().size_full().child(
             column()
                 .id("acct-list-container")
+                .gap_2()
+                .p_3()
                 .size_full()
-                .child(row().gap_1().child("Name"))
                 .children(records.into_iter().map(|record| {
-                    let (background, foreground) =
-                        if record.id == page.selected_acct_id.unwrap_or(0) {
-                            (cx.theme().accent, cx.theme().accent_foreground)
-                        } else {
-                            (cx.theme().background, cx.theme().foreground)
-                        };
+                    let selected = record.id == page.selected_acct_id.unwrap_or(0);
+                    let display_name = record.item.display_name;
 
-                    row()
+                    div()
                         .id(format!("acct_row_{}", record.id))
-                        .bg(background)
-                        .text_color(foreground)
-                        .gap_1()
-                        .child(record.item.display_name)
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                        .child(AccountCard::new(display_name.clone()).selected(selected))
+                        .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.selected_acct_id = Some(record.id);
+                            this.acct_r_dname_ipt.update(cx, |input, cx| {
+                                input.set_value(display_name.as_str(), window, cx);
+                            });
                             cx.notify();
                         }))
                 }))

@@ -27,9 +27,19 @@ The developer and agent can both add verified findings. Include the observed beh
 | A failed collection header write could discard pending updates. | [Save](../../src/core/vault/collection/mod.rs#L292) now writes the header before assigning the cached count and clearing pending updates and tracked records. | Resolved | Pending state is retained when a header write fails. Replay safety is tracked below. |
 | Retrying a partial collection save can append the same record twice. | The [append loop](../../src/core/vault/collection/mod.rs#L262) writes records and advances the in-memory tail before the header writes. If an existing collection appends one record and the header write fails, retrying can link a second copy after the first while counting the pending create once. | Open | |
 | Saved records could disappear from queries until the document was reopened. | [Save](../../src/core/vault/collection/mod.rs#L287) now updates newly written records to `OnDisk` before clearing tracked payloads. | Resolved | The directory points to the saved record. |
-| Pitaka's locked GPUI backend supports opt-in hot reload for desktop view rendering. | [`Cargo.lock`](../../Cargo.lock) resolves GPUI Kit 0.9.1 to `gpui-pre` 0.3.12. The backend defines `hot-reload`, but Kit 0.9.1 does not forward it, and `cargo tree --offline -e features -i gpui-pre` confirms it is inactive in Pitaka. [GPUI hot reload integration](https://github.com/zed-industries/zed/pull/65738) | Open | |
+| Pitaka enables GPUI hot reload, and an Accounts page render panicked during a development session. | `cargo tree --offline -e features -i gpui-pre` confirms [Pitaka enables the feature directly](../../Cargo.toml). The macOS log shows GPUI 0.3.12 failing to downcast the stored `AccountsPage` view before invoking its renderer. | Open | A mismatch between a live entity and the renderer after a patch is a possible cause. A clean-process comparison is pending. |
 
 ## Devlogs
+
+<details>
+<summary><strong>Nov. 25, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 08:36 AM +08:00 | Confirmed the GPUI hot-reload feature is active and traced the reported Accounts page panic to the erased view downcast. The log ends with a separate SIGKILL after a manual rebuild. |
+
+</details>
 
 <details>
 <summary><strong>Nov. 23, 2026</strong></summary>

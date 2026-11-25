@@ -11,6 +11,16 @@ This acts as both official documentation and devlogs.
 ## Devlogs
 
 <details>
+<summary><strong>Nov. 25, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 08:40 AM +08:00 | Fixed account card selection to prefill the rename input using the window supplied by the click listener. |
+
+</details>
+
+<details>
 <summary><strong>Nov. 21, 2026</strong></summary>
 <br>
 
