@@ -90,7 +90,6 @@ impl LiquidButton {
 
     fn background(&self, state: &LiquidButtonState) -> Rgba {
         if self.disabled {
-            // rgb(0xBDBDBD)
             rgb(0xE0E0E0)
         } else if state.hovered && !state.pressed {
             rgb(0xE0E0E0)

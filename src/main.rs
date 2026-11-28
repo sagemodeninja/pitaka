@@ -11,7 +11,7 @@ use gpui_kit::{App, AppContext, Entity, assets};
 use crate::utils::actions::AppActions;
 use crate::utils::keybinding::AppKeyBindings;
 use crate::views::MainView;
-use crate::{core::state::PitakaState, utils::menu::PitakaMenuUtils};
+use crate::{core::PitakaState, utils::menu::PitakaMenuUtils};
 
 fn main() {
     gpui_kit::application()

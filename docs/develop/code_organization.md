@@ -40,6 +40,18 @@ Revisit their placement when changing that area.
 ## Devlogs
 
 <details>
+<summary><strong>Nov. 28, 2026</strong></summary>
+<br>
+
+| Time | Logs |
+| --- | --- |
+| 10:44 PM +08:00 | Confirmed visually on macOS that `LiquidSurface` draws solid red through `Window::paint_backdrop` after removing the temporary button color marker. |
+| 10:39 PM +08:00 | Wired Metal backdrop batches to a separate instance binding. The renderer packs backdrop geometry as quads and reuses the quad draw routine with the red test pipeline. |
+| 10:28 PM +08:00 | The experimental GPUI backdrop paint method submits one primitive for the full region. Removed the border-only quad splitting logic and verified the macOS build with `cargo check --offline`. |
+
+</details>
+
+<details>
 <summary><strong>Nov. 22, 2026</strong></summary>
 <br>
 

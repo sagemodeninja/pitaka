@@ -15,7 +15,7 @@ use gpui_kit::{
 };
 
 use crate::components::{LaunchAction, column};
-use crate::core::state::PitakaState;
+use crate::core::PitakaState;
 use crate::utils::actions::{NewFile, OpenFile};
 
 pub struct MainView {
@@ -38,7 +38,7 @@ impl MainView {
 
 impl Render for MainView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let content = if self.state.read(_cx).vault.is_some() {
+        let content = if self.state.read(_cx).active_vault.is_some() {
             render_main(self)
         } else {
             render_welcome(_cx)

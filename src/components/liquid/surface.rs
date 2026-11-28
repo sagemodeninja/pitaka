@@ -61,7 +61,8 @@ impl RenderOnce for LiquidSurface {
                     |_, _, _| (),
                     move |bounds, (), window, _| {
                         let radius = px(self.radius);
-                        draw_tint(bounds, window, self.tint, radius);
+                        window.paint_backdrop(gpui::fill(bounds, self.tint));
+                        // draw_tint(bounds, window, self.tint, radius);
                         draw_border(bounds, window, radius);
                         draw_highlight(bounds, window, radius);
                     },

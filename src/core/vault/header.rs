@@ -77,8 +77,6 @@ impl FileHandle for PitakaVaultHeader {
     }
 }
 
-// Error...
-
 #[derive(Error, Debug)]
 pub enum PitakaVaultHeaderError {
     #[error("{0}")]

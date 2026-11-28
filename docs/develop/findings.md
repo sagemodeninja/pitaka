@@ -15,6 +15,8 @@ The developer and agent can both add verified findings. Include the observed beh
 
 | Finding | Evidence | Status | Resolution |
 | --- | --- | --- | --- |
+| Metal backdrop batches used the regular quad instance binding. | Backdrop ranges index `scene.backdrops`, while the draw routine previously bound the upload of `scene.quads`. | Resolved | [The Metal renderer](../../vendor/gpui-pre-apple/src/metal_renderer.rs) uploads backdrop geometry separately and binds it for backdrop draws. |
+| The experimental backdrop paint method passed a `Backdrop` to a border-only helper that takes a `Quad`. | [The paint methods](../../vendor/gpui-pre/src/window.rs) use different scene primitives. | Resolved | Backdrop painting submits one primitive for the full region. `cargo check --offline` passes. |
 | The account lookup records an ID filter that the query collector does not apply. | [The builder](../../src/core/vault/collection/query.rs) adds the filter to `plan.filters`, while [the collector](../../src/core/vault/collection/mod.rs) selects candidates using only `plan.indexed_filters`. | Open | |
 | Querying documented an outdated index registration method and value type. | [Collection](../../src/core/vault/collection/mod.rs) exposes `add_index`, and [IndexValue](../../src/core/vault/collection/index/value.rs) supports `U8` and `U64`. | Resolved | Updated the [collection index documentation](querying.md#collection-indexes). |
 | Editing an indexed field can leave the record ID under its old key. | [Collection updates](../../src/core/vault/collection/mod.rs#L160) replace the pending payload without updating index buckets. Indexed queries select IDs from those buckets without checking the payload against the indexed value. | Open | |

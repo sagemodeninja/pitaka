@@ -19,9 +19,8 @@ use crate::{
         row,
     },
     core::{
-        state::PitakaState,
-        types::Money,
-        vault::collection::{Account, Transaction},
+        Money, PitakaState,
+        collection::{Account, Transaction},
     },
 };
 
@@ -53,7 +52,7 @@ impl AccountsPage {
                         let name = input.read(cx).value();
 
                         this.state.update(cx, |state, cx| {
-                            if let Some(vault) = &mut state.vault {
+                            if let Some(vault) = &mut state.active_vault {
                                 if let Some(record) = vault.get_account(id) {
                                     let mut account = record.item;
 
@@ -103,7 +102,7 @@ impl Render for AccountsPage {
                         .label("Add Account")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.state.update(cx, |state, cx| {
-                                if let Some(doc) = &mut state.vault {
+                                if let Some(doc) = &mut state.active_vault {
                                     let dname = this.acct_dname_ipt.read(cx).value();
                                     doc.accounts().add(Account {
                                         display_name: dname.into(),
@@ -153,7 +152,7 @@ impl Render for AccountsPage {
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 if let Some(id) = this.selected_acct_id {
                                                     this.state.update(cx, |state, cx| {
-                                                        if let Some(doc) = &mut state.vault {
+                                                        if let Some(doc) = &mut state.active_vault {
                                                             doc.accounts().delete(id);
                                                             cx.notify();
                                                         }
@@ -182,7 +181,7 @@ impl Render for AccountsPage {
                             .label("Add Transaction")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.state.update(cx, |state, cx| {
-                                    if let Some(doc) = &mut state.vault {
+                                    if let Some(doc) = &mut state.active_vault {
                                         if let Some(id) = this.selected_acct_id {
                                             let desc = this.trans_desc_ipt.read(cx).value();
                                             let s_amnt = this.trans_amnt_ipt.read(cx).value();
@@ -208,7 +207,7 @@ impl Render for AccountsPage {
 
 fn render_accts(page: &AccountsPage, cx: &mut Context<AccountsPage>) -> Div {
     let records = page.state.update(cx, |state, _| {
-        state.vault.as_mut().map(|doc| doc.get_all_accts())
+        state.active_vault.as_mut().map(|doc| doc.get_all_accts())
     });
 
     match records {
@@ -247,7 +246,10 @@ fn render_accts(page: &AccountsPage, cx: &mut Context<AccountsPage>) -> Div {
 fn render_trans(view: &AccountsPage, cx: &mut App) -> Div {
     if let Some(acct_id) = view.selected_acct_id {
         let records = view.state.update(cx, |state, _| {
-            state.vault.as_mut().map(|doc| doc.get_acct_trans(acct_id))
+            state
+                .active_vault
+                .as_mut()
+                .map(|doc| doc.get_acct_trans(acct_id))
         });
 
         match records {

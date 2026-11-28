@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use gpui_kit::{Action, App, Entity, actions};
 
-use crate::{core::state::PitakaState, utils::dir::documents_dir};
+use crate::{core::PitakaState, utils::dir::documents_dir};
 
 actions!(pitaka, [Quit, NewFile, OpenFile, ClearRecents, SaveFile]);
 

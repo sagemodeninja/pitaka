@@ -2,7 +2,7 @@ use gpui_kit::Entity;
 use gpui_kit::{App, Menu, MenuItem};
 use std::path::PathBuf;
 
-use crate::core::state::PitakaState;
+use crate::core::PitakaState;
 use crate::utils::actions::*;
 
 pub trait PitakaMenuUtils {
