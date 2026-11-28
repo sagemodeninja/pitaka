@@ -21,10 +21,7 @@ use crate::{
     core::{
         state::PitakaState,
         types::Money,
-        vault::{
-            self,
-            collection::{Account, Transaction},
-        },
+        vault::collection::{Account, Transaction},
     },
 };
 
@@ -54,11 +51,14 @@ impl AccountsPage {
                     if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
                         let id = this.selected_acct_id.unwrap();
                         let name = input.read(cx).value();
+
                         this.state.update(cx, |state, cx| {
                             if let Some(vault) = &mut state.vault {
-                                match vault.get_account(id) {
-                                    Some(account) => println!(">>account: {id}/{}", account.id),
-                                    None => println!("Not found..."),
+                                if let Some(record) = vault.get_account(id) {
+                                    let mut account = record.item;
+
+                                    account.display_name = name.into();
+                                    vault.accounts().update(id, account);
                                 }
                             }
                         });
