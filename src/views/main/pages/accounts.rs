@@ -56,8 +56,9 @@ impl AccountsPage {
                         let name = input.read(cx).value();
                         this.state.update(cx, |state, cx| {
                             if let Some(vault) = &mut state.vault {
-                                if let Some(account) = vault.get_account(id) {
-                                    println!(">>account: {id}/{}", account.id);
+                                match vault.get_account(id) {
+                                    Some(account) => println!(">>account: {id}/{}", account.id),
+                                    None => println!("Not found..."),
                                 }
                             }
                         });

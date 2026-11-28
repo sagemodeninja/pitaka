@@ -1,9 +1,14 @@
-use crate::core::vault::collection::{Record, RecordPayload};
+use crate::core::vault::collection::RecordPayload;
 
 use super::value::IndexValue;
 use std::collections::HashMap;
 
 type Index = HashMap<IndexValue, Vec<u64>>;
+
+pub struct CollectionIndex<T: RecordPayload> {
+    pub field: &'static str,
+    pub evaluator: Box<dyn Fn(&T) -> IndexValue>,
+}
 
 pub struct CollectionIndexBuilder<T: RecordPayload> {
     evaluators: HashMap<String, Box<dyn Fn(&T) -> IndexValue>>,
@@ -18,8 +23,8 @@ impl<T: RecordPayload> CollectionIndexBuilder<T> {
         }
     }
 
-    pub fn add_index(&mut self, key: &str, eval: impl Fn(&T) -> IndexValue + 'static) -> &mut Self {
-        self.evaluators.insert(key.into(), Box::new(eval));
+    pub fn add_index(&mut self, index: CollectionIndex<T>) -> &mut Self {
+        self.evaluators.insert(index.field.into(), index.evaluator);
         self
     }
 
@@ -40,3 +45,14 @@ impl<T: RecordPayload> CollectionIndexBuilder<T> {
         }
     }
 }
+
+macro_rules! index {
+    (|$record:ident| $receiver:ident.$first:ident$(.$rest:ident)*) => {
+        $crate::core::vault::collection::CollectionIndex {
+            field: concat!(stringify!($first) $(, "_", stringify!($rest))*),
+            evaluator: Box::new(|$record| $receiver.$first$(.$rest)*.into())
+        }
+    };
+}
+
+pub(crate) use index;

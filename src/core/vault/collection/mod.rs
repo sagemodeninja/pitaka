@@ -25,7 +25,7 @@ use std::os::unix::fs::MetadataExt;
 
 use crate::core::vault::collection::delta::RecordDelta::{self, Create, Delete, Update};
 use crate::core::vault::collection::directory::RecordDirectory;
-use crate::core::vault::collection::index::{CollectionIndexBuilder, IndexValue};
+use crate::core::vault::collection::index::{CollectionIndex, CollectionIndexBuilder, IndexValue};
 use crate::core::vault::collection::location::RecordLocation::{self, InMemory, OnDisk};
 use crate::core::vault::collection::query::CollectionQueryBuilder;
 use crate::utils::extensions::file::{
@@ -54,12 +54,8 @@ impl<T: RecordPayload> Collection<T> {
         }
     }
 
-    pub fn add_index<'a>(
-        &mut self,
-        key: &str,
-        eval: impl Fn(&T) -> IndexValue + 'static,
-    ) -> &mut CollectionIndexBuilder<T> {
-        self.indexes.add_index(key, eval)
+    pub fn add_index<'a>(&mut self, index: CollectionIndex<T>) -> &mut CollectionIndexBuilder<T> {
+        self.indexes.add_index(index)
     }
 
     pub fn build_indexes(&mut self, file: &mut File) -> io::Result<()> {
@@ -84,13 +80,16 @@ impl<T: RecordPayload> Collection<T> {
         T: Clone,
     {
         CollectionQueryBuilder::new(move |plan| {
-            let mut results = Vec::<RecordSlice<T>>::new();
-
             type Candidates<'a> =
                 Box<dyn DoubleEndedIterator<Item = &'a (u64, RecordLocation)> + 'a>;
 
-            let mut candidates: Candidates<'_> = match plan.filters.into_iter().next() {
-                Some(filter) => self
+            let mut read_record = |offset: u64| -> io::Result<Record<T>> {
+                file.move_to(offset)?;
+                Record::<T>::read_from_file(file)
+            };
+
+            let records: Vec<_> = if let Some(filter) = plan.filters.iter().next() {
+                let mut candidates = self
                     .indexes
                     .get(filter.field)
                     .and_then(|index| {
@@ -98,62 +97,66 @@ impl<T: RecordPayload> Collection<T> {
                             Box::new(ids.iter().filter_map(|id| self.directory.get(id)))
                         })
                     })
-                    .unwrap_or(Box::new(self.directory.iter())),
-                None => {
-                    if plan.indexed_filters.is_empty() {
-                        Box::new(self.directory.iter())
-                    } else {
-                        let ids = plan
-                            .indexed_filters
-                            .iter()
-                            .next()
-                            .and_then(|(key, value)| self.indexes.get(key)?.get(value))
-                            .map(Vec::as_slice)
-                            .unwrap_or(&[]);
+                    .unwrap_or(Box::new(self.directory.iter()));
 
-                        Box::new(ids.iter().filter_map(move |id| self.directory.get(id)))
+                let mut reversed;
+
+                let iter: &mut dyn Iterator<Item = &(u64, RecordLocation)> = if plan.is_reversed {
+                    reversed = candidates.rev();
+                    &mut reversed
+                } else {
+                    &mut candidates
+                };
+
+                iter.filter_map(|(id, location)| -> Option<RecordSlice<T>> {
+                    match location {
+                        OnDisk(offset) => match read_record(*offset) {
+                            Ok(record) => Some(record.into()),
+                            Err(..) => None,
+                        },
+                        InMemory => self.updates.get(id).and_then(|delta| match delta {
+                            Create(id, item) | Update(id, _, item) => {
+                                Some(RecordSlice::new(*id, item.clone()))
+                            }
+                            _ => None,
+                        }),
                     }
-                }
-            };
-
-            let mut reversed;
-            let iter: &mut dyn Iterator<Item = &(u64, RecordLocation)> = if plan.is_reversed {
-                reversed = candidates.rev();
-                &mut reversed
+                })
+                .filter(|record| (filter.evaluator)(&record))
+                .skip(plan.skip)
+                .take(plan.take)
+                .collect()
             } else {
-                &mut candidates
-            };
+                let mut candidates = Box::new(self.directory.iter());
 
-            let take = match plan.take {
-                Some(take) => take as usize,
-                None => usize::MAX,
-            };
+                let mut reversed;
+                let iter: &mut dyn Iterator<Item = &(u64, RecordLocation)> = if plan.is_reversed {
+                    reversed = candidates.rev();
+                    &mut reversed
+                } else {
+                    &mut candidates
+                };
 
-            for (id, location) in iter.skip(plan.skip as usize).take(take) {
-                match location {
-                    OnDisk(offset) => {
-                        file.move_to(*offset)?;
-                        let record = Record::<T>::read_from_file(file)?;
-                        results.push(record.into());
-                    }
-                    InMemory => {
-                        if let Some(delta) = self.updates.get(id) {
-                            let item = match delta {
+                iter.skip(plan.skip as usize)
+                    .take(plan.take)
+                    .filter_map(|(id, location)| -> Option<RecordSlice<T>> {
+                        match location {
+                            OnDisk(offset) => match read_record(*offset) {
+                                Ok(record) => Some(record.into()),
+                                Err(..) => None,
+                            },
+                            InMemory => self.updates.get(id).and_then(|delta| match delta {
                                 Create(id, item) | Update(id, _, item) => {
                                     Some(RecordSlice::new(*id, item.clone()))
                                 }
                                 _ => None,
-                            };
-
-                            if let Some(item) = item {
-                                results.push(item);
-                            }
+                            }),
                         }
-                    }
-                }
-            }
+                    })
+                    .collect()
+            };
 
-            Ok(results)
+            Ok(records)
         })
     }
 

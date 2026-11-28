@@ -66,13 +66,20 @@ impl PitakaVault {
     }
 
     pub fn get_account(&mut self, id: u64) -> Option<RecordSlice<Account>> {
-        self.collections
+        let res = self
+            .collections
             .get::<Account>()
             .query(&mut self.file)
             .first(filter!(|account| account.id == id))
-            .collect()
-            .ok()
-            .unwrap()
+            .collect();
+
+        match res {
+            Ok(result) => result,
+            Err(error) => {
+                println!("{:?}", error);
+                None
+            }
+        }
     }
 
     pub fn get_all_accts(&mut self) -> io::Result<Vec<RecordSlice<Account>>> {
@@ -86,7 +93,7 @@ impl PitakaVault {
         self.collections
             .get::<Transaction>()
             .query(&mut self.file)
-            .filter_indexed("acct_id", id.into())
+            .all(filter!(|transaction| transaction.item.account_id == id))
             .reverse()
             .collect()
     }

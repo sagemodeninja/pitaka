@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io};
+use std::io;
 
 use super::{RecordPayload, RecordSlice, index::IndexValue};
 
@@ -11,11 +11,10 @@ pub struct QueryFilter<T: RecordPayload> {
 }
 
 pub struct CollectionQueryPlan<T: RecordPayload> {
-    pub skip: u32,
-    pub take: Option<u32>,
+    pub skip: usize,
+    pub take: usize,
     pub is_reversed: bool,
     pub filters: Vec<QueryFilter<T>>,
-    pub indexed_filters: HashMap<String, IndexValue>,
 }
 
 pub struct CollectionQueryBuilder<'a, T: RecordPayload> {
@@ -32,10 +31,9 @@ impl<T: RecordPayload> CollectionQueryPlan<T> {
     pub fn new() -> Self {
         Self {
             skip: 0,
-            take: None,
+            take: usize::MAX,
             is_reversed: false,
             filters: Vec::new(),
-            indexed_filters: HashMap::new(),
         }
     }
 }
@@ -64,15 +62,15 @@ impl<'a, T: RecordPayload> CollectionQueryBuilder<'a, T> {
         }
     }
 
-    pub fn filter_indexed(mut self, index: &str, value: IndexValue) -> Self {
-        self.plan.indexed_filters.insert(index.into(), value);
+    pub fn all(mut self, filter: QueryFilter<T>) -> Self {
+        self.plan.filters.push(filter);
         self
     }
 
     pub fn first(mut self, filter: QueryFilter<T>) -> SingleResultQueryBuilder<'a, T> {
         self.plan.filters.push(filter);
         self.plan.skip = 0;
-        self.plan.take = Some(1);
+        self.plan.take = 1;
 
         SingleResultQueryBuilder {
             plan: self.plan,
@@ -80,13 +78,13 @@ impl<'a, T: RecordPayload> CollectionQueryBuilder<'a, T> {
         }
     }
 
-    pub fn skip(mut self, n: u32) -> Self {
+    pub fn skip(mut self, n: usize) -> Self {
         self.plan.skip = n;
         self
     }
 
-    pub fn take(mut self, n: u32) -> Self {
-        self.plan.take = Some(n);
+    pub fn take(mut self, n: usize) -> Self {
+        self.plan.take = n;
         self
     }
 
@@ -101,14 +99,15 @@ impl<'a, T: RecordPayload> CollectionQueryBuilder<'a, T> {
 }
 
 macro_rules! filter {
-    (|$record:ident| $receiver:ident.$field:ident == $value:expr) => {{
+    (|$record:ident| $receiver:ident.$first:ident$(.$rest:ident)* == $value:expr) => {{
         let value = $value;
+
         $crate::core::vault::collection::QueryFilter {
-            field: stringify!($field),
+            field: concat!(stringify!($first) $(, "_", stringify!($rest))*),
             value: value.into(),
             evaluator: Box::new(
                 move |$record: &$crate::core::vault::collection::RecordSlice<_>| {
-                    $receiver.$field == value
+                    $receiver.$first$(.$rest)* == value
                 },
             ),
         }

@@ -4,8 +4,10 @@ use std::io;
 use indexmap::IndexMap;
 
 use super::Transaction;
+use super::index::index;
 use super::{Account, AnyCollection, Collection, CollectionHeader, CollectionType};
 use crate::core::vault;
+use crate::core::vault::collection::filter;
 use crate::utils::{extensions::file::FileCursorExtensions, file::FileHandle};
 
 const COLLECTION_SIZE: u64 = 40;
@@ -18,7 +20,7 @@ pub struct RootCollection {
 
 impl RootCollection {
     pub fn new(mut headers: Collection<CollectionHeader>) -> Self {
-        headers.add_index("collection_type", |collection| collection.c_type.into());
+        headers.add_index(index!(|collection| collection.c_type));
 
         Self {
             headers,
@@ -44,7 +46,7 @@ impl RootCollection {
         self.load_collection::<Account>(file, |_| {})?;
 
         self.load_collection::<Transaction>(file, |collection| {
-            collection.add_index("acct_id", |transaction| transaction.account_id.into());
+            collection.add_index(index!(|transaction| transaction.account_id));
         })?;
 
         Ok(())
@@ -83,7 +85,7 @@ impl RootCollection {
         let result = self
             .headers
             .query(file)
-            .filter_indexed("collection_type", T::c_type().into())
+            .all(filter!(|header| header.item.c_type == T::c_type()))
             .take(1)
             .collect()?;
 
