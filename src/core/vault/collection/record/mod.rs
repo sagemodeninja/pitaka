@@ -23,8 +23,7 @@ pub struct Record<T: RecordPayload> {
     pub item: T,
 }
 
-pub trait RecordPayload: FileHandle {
-    fn record_type() -> u8;
+pub trait RecordPayload: FileHandle + Clone {
     fn size(&self) -> u32;
 }
 
@@ -55,6 +54,7 @@ impl<T: RecordPayload> FileHandle for Record<T> {
             id: file.read_le_u64()?,
             created_at: file.read()?,
             last_modified_at: file.read()?,
+
             item: T::read_from_file(file)?,
         })
     }
@@ -66,6 +66,24 @@ impl<T: RecordPayload> FileHandle for Record<T> {
         file.write_le_u64(self.id)?;
         file.write(&mut self.created_at)?;
         file.write(&mut self.last_modified_at)?;
+
         self.item.write_to_file(file)
+    }
+}
+
+pub struct RecordSlice<T: RecordPayload> {
+    pub id: u64,
+    pub item: T,
+}
+
+impl<T: RecordPayload> RecordSlice<T> {
+    pub fn new(id: u64, item: T) -> Self {
+        Self { id, item }
+    }
+}
+
+impl<T: RecordPayload> From<Record<T>> for RecordSlice<T> {
+    fn from(value: Record<T>) -> Self {
+        Self::new(value.id, value.item)
     }
 }

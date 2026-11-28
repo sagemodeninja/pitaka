@@ -35,7 +35,7 @@ impl AppActions for App {
                     match selection.await {
                         Ok(Ok(Some(path))) => {
                             let result = state.update(cx, |state, cx| {
-                                state.new_doc(path)?;
+                                state.new_vault("Gary's Vault", path)?;
                                 cx.notify();
                                 Ok::<(), std::io::Error>(())
                             });

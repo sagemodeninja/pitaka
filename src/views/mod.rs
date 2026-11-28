@@ -1,1 +1,3 @@
-pub mod home;
+mod main;
+
+pub use main::MainView;

@@ -5,14 +5,12 @@ mod views;
 
 use std::borrow::Cow;
 
-use gpui_kit::base::input::MaskPattern;
-use gpui_kit::component::input::InputState;
 use gpui_kit::component::{Theme, TitleBar};
 use gpui_kit::{App, AppContext, Entity, assets};
 
 use crate::utils::actions::AppActions;
 use crate::utils::keybinding::AppKeyBindings;
-use crate::views::home::PitakaView;
+use crate::views::MainView;
 use crate::{core::state::PitakaState, utils::menu::PitakaMenuUtils};
 
 fn main() {
@@ -61,21 +59,7 @@ fn go_home(app: &mut App, state: &Entity<PitakaState>) {
             })
             .detach();
 
-        cx.new(|cx| PitakaView {
-            state: state.clone(),
-            selected_acct_id: 0,
-            acct_dname_ipt: cx.new(|cx| InputState::new(window, cx).placeholder("Enter name")),
-            trans_desc_ipt: cx
-                .new(|cx| InputState::new(window, cx).placeholder("Enter description")),
-            trans_amnt_ipt: cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("Enter amount")
-                    .mask_pattern(MaskPattern::Number {
-                        separator: Some(','),
-                        fraction: Some(2),
-                    })
-            }),
-        })
+        MainView::new(state, window, cx)
     })
     .unwrap();
 }

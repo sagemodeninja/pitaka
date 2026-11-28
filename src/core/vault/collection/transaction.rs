@@ -4,8 +4,9 @@ use std::io::Result;
 use chrono::DateTime;
 use chrono::Utc;
 
-use crate::core::document::collection::RecordPayload;
 use crate::core::types::Money;
+use crate::core::vault::collection::CollectionType;
+use crate::core::vault::collection::RecordPayload;
 use crate::utils::extensions::file::FileReadExtensions;
 use crate::utils::extensions::file::FileWriteExtensions;
 use crate::utils::extensions::string::StringExtensions;
@@ -23,11 +24,13 @@ pub struct Transaction {
     pub amount: Money,
 }
 
-impl RecordPayload for Transaction {
-    fn record_type() -> u8 {
+impl CollectionType for Transaction {
+    fn c_type() -> u8 {
         2
     }
+}
 
+impl RecordPayload for Transaction {
     fn size(&self) -> u32 {
         let desc_len = self.description.len_u32();
         ACCT_ID_SIZE + OCCURED_AT_SIZE + AMOUNT_SIZE + desc_len
